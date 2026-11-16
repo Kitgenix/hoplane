@@ -1,0 +1,54 @@
+HOPLANE LICENCE (DRAFT 1.0)
+Copyright (c) 2026 Kitgenix (https://kitgenix.com). All rights reserved.
+
+NOTE: This is a proposed, source-available licence. It is not an OSI-approved
+open-source licence and it has not yet been reviewed by a lawyer. Kitgenix
+intends to have it reviewed and finalised before the public release.
+
+Permission is granted, free of charge, to any person obtaining a copy of this
+software and its source code (the "Software") to use, copy, run, modify, fork,
+publicly host, distribute and use the Software commercially, subject to the
+following conditions:
+
+1. NOTICES
+   This licence, the copyright notice above and the NOTICE file must be kept
+   in all copies or substantial portions of the Software, including modified
+   versions.
+
+2. VISIBLE ATTRIBUTION
+   Every deployment of the Software, modified or not, that serves HTML pages
+   (including the dashboard, the sign-in and setup screens, the public landing
+   page, and the password, warning, error and link-preview pages) must show
+   working, visible links to:
+
+     - Kitgenix.com: https://kitgenix.com
+     - Kitgenix on GitHub: https://github.com/Kitgenix
+
+   The links may be restyled and may appear in a footer, sidebar or similar
+   location, provided an ordinary visitor can see and use them without signing
+   in to any external service. They must not be hidden, obscured, made
+   non-functional, or redirected elsewhere. Attribution is not required on
+   HTTP redirects, JSON API responses or other non-HTML responses.
+
+3. MODIFIED VERSIONS
+   You may change any other functionality, design or branding. A modified
+   version must not be presented as the official Kitgenix project, and must
+   include a notice stating that it was modified and when.
+
+4. TRADEMARKS
+   Apart from the attribution required in section 2, this licence grants no
+   right to use the Kitgenix name or logos, or to imply endorsement by Kitgenix.
+
+5. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+6. TERMINATION
+   If you breach these conditions, your rights under this licence end
+   automatically. They are restored if you fix the breach within 30 days of
+   becoming aware of it.

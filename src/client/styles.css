@@ -1,0 +1,150 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Kitgenix brand palette
+ *   Primary Blue #214BFF · Electric Blue #42B3FF · Midnight #071B3A · Slate #64748B
+ *   Off White #F5F9FF · White #FFFFFF · Success #22C55E · Warning #F59E0B · Error #EF4444 · Info #0EA5E9
+ * The *-fg tokens are text-safe shades of the same hues (WCAG AA on the surface colours).
+ */
+:root {
+  --bg: #f5f9ff;
+  --surface: #ffffff;
+  --surface-2: #edf3fd;
+  --line: #dde6f3;
+  --text: #071b3a;
+  --muted: #64748b;
+  --brand: #214bff;
+  --brand-2: #42b3ff;
+  --brand-fg: #214bff;
+  --brand-soft: #e9efff;
+  --brand-ink: #ffffff;
+  --good: #22c55e;
+  --good-fg: #15803d;
+  --bad: #ef4444;
+  --bad-fg: #dc2626;
+  --warn: #f59e0b;
+  --warn-fg: #b45309;
+  --info: #0ea5e9;
+  --info-fg: #0369a1;
+  --chart-1: #214bff;
+  --chart-2: #42b3ff;
+  --chart-grid: #e6edf8;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --bg: #04122a;
+    --surface: #071b3a;
+    --surface-2: #0c264f;
+    --line: #16335f;
+    --text: #f5f9ff;
+    --muted: #94a3b8;
+    --brand: #214bff;
+    --brand-2: #42b3ff;
+    --brand-fg: #42b3ff;
+    --brand-soft: #0f2c5c;
+    --good-fg: #22c55e;
+    --bad-fg: #f87171;
+    --warn-fg: #f59e0b;
+    --info-fg: #0ea5e9;
+    --chart-1: #42b3ff;
+    --chart-2: #8aa2ff;
+    --chart-grid: #12305a;
+    color-scheme: dark;
+  }
+}
+:root.dark {
+  --bg: #04122a;
+  --surface: #071b3a;
+  --surface-2: #0c264f;
+  --line: #16335f;
+  --text: #f5f9ff;
+  --muted: #94a3b8;
+  --brand: #214bff;
+  --brand-2: #42b3ff;
+  --brand-fg: #42b3ff;
+  --brand-soft: #0f2c5c;
+  --good-fg: #22c55e;
+  --bad-fg: #f87171;
+  --warn-fg: #f59e0b;
+  --info-fg: #0ea5e9;
+  --chart-1: #42b3ff;
+  --chart-2: #8aa2ff;
+  --chart-grid: #12305a;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --color-brand-fg: var(--brand-fg);
+  --color-good-fg: var(--good-fg);
+  --color-bad-fg: var(--bad-fg);
+  --color-warn-fg: var(--warn-fg);
+  --color-info: var(--info);
+  --color-info-fg: var(--info-fg);
+  --color-midnight: #071b3a;
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-ink: var(--brand-ink);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-warn: var(--warn);
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+::selection {
+  background: color-mix(in oklab, var(--brand) 30%, transparent);
+}
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+@keyframes slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.animate-slide-in { animation: slide-in 0.18s ease-out; }
+.animate-fade-in { animation: fade-in 0.2s ease-out; }
+.animate-pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-slide-in, .animate-fade-in, .animate-pulse-dot { animation: none; }
+}
+
+/* Kitgenix brand gradients */
+.kg-gradient-primary { background-image: linear-gradient(135deg, #42b3ff 0%, #214bff 100%); }
+.kg-gradient-midnight { background-image: linear-gradient(135deg, #0f2c5c 0%, #071b3a 100%); }
+.kg-gradient-premium { background-image: linear-gradient(135deg, #42b3ff 0%, #214bff 55%, #071b3a 100%); }
+.kg-gradient-soft { background-image: linear-gradient(180deg, #ffffff 0%, #f5f9ff 100%); }
+.kg-gradient-nebula { background-image: linear-gradient(145deg, #f5f9ff 0%, #42b3ff 18%, #214bff 60%, #071b3a 100%); }

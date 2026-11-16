@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is the minimum supported version (npm 10); 24 is the current LTS (npm 11).
+        node-version: [22, 24]
+    name: test (Node ${{ matrix.node-version }})
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      # Integration tests run inside the real Workers runtime (workerd) with local D1 and KV.
+      # They include checks that the Kitgenix attribution links are present.
+      - run: npm test

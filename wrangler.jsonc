@@ -1,0 +1,57 @@
+/**
+ * Hoplane: Cloudflare configuration.
+ * https://kitgenix.com · https://github.com/Kitgenix
+ *
+ * Resource IDs are intentionally omitted. Wrangler (>= 4.45) and the
+ * "Deploy to Cloudflare" button automatically create the D1 database and KV
+ * namespace in YOUR account on first deploy and reuse them afterwards.
+ * Prefer explicit IDs? Run `npm run setup` and they are written in below.
+ */
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "hoplane",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-11-01",
+  "observability": { "enabled": true },
+
+  // The Worker handles every request except built dashboard assets.
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/*", "!/assets/*", "!/favicon.svg"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hoplane",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "CACHE"
+    }
+  ],
+
+  // Daily housekeeping: analytics retention, expired sessions, salt rotation, optional backup.
+  "triggers": { "crons": ["17 3 * * *"] },
+
+  "vars": {
+    // Shown in the dashboard and on public pages. Rename freely; the Kitgenix credit stays.
+    "SITE_NAME": "Hoplane",
+    // If set, visiting "/" redirects here instead of showing the landing page.
+    "HOME_URL": "",
+    // Length of auto-generated slugs.
+    "SLUG_LENGTH": "6",
+    // "true" keeps slug case (Abc ≠ abc). Default normalises slugs to lowercase.
+    "CASE_SENSITIVE": "false",
+    // Click-level analytics older than this many days is deleted by the daily job.
+    "RETENTION_DAYS": "365"
+  }
+
+  // Optional: nightly JSON backups of links to R2 (R2 must be enabled on your account).
+  // "r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "hoplane-backups" }]
+}

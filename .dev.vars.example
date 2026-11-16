@@ -1,0 +1,6 @@
+# Secrets for Hoplane. Copy to .dev.vars for local development.
+# The "Deploy to Cloudflare" button prompts for these automatically.
+
+# One-time token required to create the first (owner) account at /dashboard.
+# Generate one with:  openssl rand -base64 32
+SETUP_TOKEN=change-me-to-a-long-random-value

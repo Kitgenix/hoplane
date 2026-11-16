@@ -1,0 +1,20 @@
+Hoplane by Kitgenix
+Every link has a destination.
+
+Copyright (c) 2026 Kitgenix
+
+Product: https://kitgenix.com/hoplane
+Website: https://kitgenix.com
+GitHub:  https://github.com/Kitgenix
+Source:  https://github.com/kitgenix/hoplane
+
+Hoplane is an original implementation. Its feature set was informed by
+other open-source link shorteners, but it contains no code from them.
+
+Attribution links to Kitgenix.com and the Kitgenix GitHub must remain visible
+on every HTML page a deployment serves (see LICENSE, section 2). The links are
+defined in src/shared/attribution.ts and are checked by the test suite.
+
+Third-party packages used at runtime: Hono (MIT), Zod (MIT), React (MIT),
+wouter (Unlicense), lucide-react (ISC), uqr (MIT). Full licence texts are in
+each package under node_modules.

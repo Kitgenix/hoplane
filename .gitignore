@@ -1,0 +1,28 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Wrangler local state (local D1/KV data, temp builds)
+.wrangler/
+
+# Secrets: never commit. Only the example file is tracked.
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+.env.*
+
+# Logs
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Personal Claude Code settings
+.claude/settings.local.json
