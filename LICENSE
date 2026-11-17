@@ -1,54 +1,181 @@
-HOPLANE LICENCE (DRAFT 1.0)
+HOPLANE SOURCE-AVAILABLE LICENCE
+Version 1.0 — DRAFT FOR LEGAL REVIEW
+
 Copyright (c) 2026 Kitgenix (https://kitgenix.com). All rights reserved.
 
-NOTE: This is a proposed, source-available licence. It is not an OSI-approved
-open-source licence and it has not yet been reviewed by a lawyer. Kitgenix
-intends to have it reviewed and finalised before the public release.
+IMPORTANT NOTICE
+This is a custom, source-available software licence. It has not been approved
+by the Open Source Initiative (OSI) and must not be described as an OSI-approved
+open-source licence. This draft requires legal review before final publication.
 
-Permission is granted, free of charge, to any person obtaining a copy of this
-software and its source code (the "Software") to use, copy, run, modify, fork,
-publicly host, distribute and use the Software commercially, subject to the
-following conditions:
+1. DEFINITIONS
 
-1. NOTICES
-   This licence, the copyright notice above and the NOTICE file must be kept
-   in all copies or substantial portions of the Software, including modified
-   versions.
+"Hoplane" or the "Software" means the Hoplane software and associated files
+made available by Kitgenix under this Licence, including modifications and
+derivative works based upon those files. Third-party components remain subject
+to their own applicable licences.
 
-2. VISIBLE ATTRIBUTION
-   Every deployment of the Software, modified or not, that serves HTML pages
-   (including the dashboard, the sign-in and setup screens, the public landing
-   page, and the password, warning, error and link-preview pages) must show
-   working, visible links to:
+"Kitgenix" or the "Licensor" means the copyright holder or holders authorised
+to license the relevant parts of the Software under this Licence.
 
-     - Kitgenix.com: https://kitgenix.com
-     - Kitgenix on GitHub: https://github.com/Kitgenix
+"You" means an individual or legal entity exercising rights granted by this
+Licence.
 
-   The links may be restyled and may appear in a footer, sidebar or similar
-   location, provided an ordinary visitor can see and use them without signing
-   in to any external service. They must not be hidden, obscured, made
-   non-functional, or redirected elsewhere. Attribution is not required on
-   HTTP redirects, JSON API responses or other non-HTML responses.
+"Deployment" means an instance of the Software made available for use over a
+network, whether publicly accessible or restricted to an organisation or team.
 
-3. MODIFIED VERSIONS
-   You may change any other functionality, design or branding. A modified
-   version must not be presented as the official Kitgenix project, and must
-   include a notice stating that it was modified and when.
+2. PERMISSION GRANT
 
-4. TRADEMARKS
-   Apart from the attribution required in section 2, this licence grants no
-   right to use the Kitgenix name or logos, or to imply endorsement by Kitgenix.
+Subject to the conditions of this Licence, the Licensor grants You a worldwide,
+non-exclusive, royalty-free permission to use, run, copy, modify, fork, create
+derivative works of, host, deploy, distribute and use the Software for personal,
+internal, educational and commercial purposes.
 
-5. NO WARRANTY
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-   SOFTWARE.
+You may charge for products or services that use or include the Software. You
+are not required by this Licence to publish the source code of modifications
+You make, but all use and distribution of the original Software and covered
+modifications remains subject to this Licence.
 
-6. TERMINATION
-   If you breach these conditions, your rights under this licence end
-   automatically. They are restored if you fix the breach within 30 days of
-   becoming aware of it.
+No permission is granted to remove or circumvent the attribution conditions
+below, or to grant others rights in the Licensor's Software that are
+inconsistent with this Licence.
+
+3. COPYRIGHT, LICENCE AND NOTICE PRESERVATION
+
+All copies or substantial portions of the Software that You distribute,
+including modified copies, must retain:
+
+(a) the original copyright notice;
+(b) a complete copy of this Licence; and
+(c) the project's NOTICE file and any third-party notices required by their
+    respective licences.
+
+For distribution in compiled or packaged form, these notices may be included
+in the accompanying documentation or other reasonably accessible materials.
+
+You may add Your own copyright and other notices for Your modifications,
+provided they do not obscure, contradict or replace the notices required above.
+
+4. MANDATORY VISIBLE ATTRIBUTION
+
+Every Deployment of the Software, whether modified or unmodified, must retain
+visible, working attribution links to both of the following destinations:
+
+(a) Kitgenix: https://kitgenix.com
+(b) Original Hoplane repository: https://github.com/Kitgenix/hoplane
+
+The attribution requirement applies to each HTML page generated or served by
+the Software, including, where present, the public landing page, dashboard,
+sign-in and setup screens, password-protection pages, redirect-warning pages,
+link-preview pages and application-rendered error pages.
+
+On each such page, the links must:
+
+(a) be plainly visible and reasonably legible in the ordinary page interface;
+(b) be clickable and lead to the exact destinations listed above;
+(c) remain accessible to a person who can ordinarily view that page, without
+    requiring an unrelated login, payment, or additional service; and
+(d) not be concealed, disabled, obscured, deceptively labelled, or replaced
+    by non-functional text or images.
+
+The attribution may be restyled to match the Deployment's design and may appear
+in a footer, sidebar or similar location. It need not retain the original
+Hoplane styling or branding, so long as the required attribution remains clear
+and functional.
+
+Attribution is not required in HTTP redirect responses, JSON or other API
+responses, machine-readable data, non-HTML content, or third-party error pages
+not generated or served by the Software.
+
+This requirement applies to modified Software, rebranded Deployments, and
+Deployments offered as part of a commercial service.
+
+5. MODIFICATIONS AND REDISTRIBUTION
+
+You may change the Software's functionality, appearance, name and branding,
+subject to Sections 3, 4 and 6.
+
+If You distribute a modified version, You must include a reasonably prominent
+notice in the accompanying source code or documentation stating that the
+Software has been modified, identifying the modifier, and giving the date of
+the modification or the period during which modifications were made. You may
+also maintain a MODIFICATIONS file for this purpose.
+
+You may apply separate terms to original material You contribute, provided
+those terms do not purport to eliminate the requirements of this Licence for
+the Software covered by it.
+
+You must not present an unofficial fork or modified version as an official
+Kitgenix release or imply that Kitgenix has reviewed, approved or endorsed it.
+
+6. TRADEMARKS AND PROJECT IDENTITY
+
+This Licence does not grant rights to use Kitgenix or Hoplane trademarks, logos,
+trade dress, or other brand assets to market or endorse a modified product or
+service, except for the nominative identification and attribution expressly
+required by this Licence or otherwise permitted by applicable law.
+
+The required attribution links do not imply sponsorship, partnership,
+certification or endorsement by Kitgenix.
+
+7. THIRD-PARTY COMPONENTS
+
+The Software may include third-party packages, libraries, assets or other
+materials. This Licence does not replace or override the licences applicable
+to those components. You remain responsible for complying with their separate
+terms, including any required copyright notices and attribution.
+
+8. NO WARRANTY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED
+"AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, TITLE AND NON-INFRINGEMENT.
+
+THE LICENSOR DOES NOT WARRANT THAT THE SOFTWARE WILL BE UNINTERRUPTED, SECURE,
+ERROR-FREE, OR SUITABLE FOR ANY PARTICULAR USE.
+
+9. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR AND CONTRIBUTORS
+WILL NOT BE LIABLE FOR ANY CLAIM, LOSS, DAMAGE, COST OR EXPENSE ARISING OUT OF
+OR RELATING TO THE SOFTWARE OR ITS USE, INCLUDING LOSS OF DATA, LOSS OF PROFITS,
+BUSINESS INTERRUPTION, OR INDIRECT OR CONSEQUENTIAL DAMAGE, REGARDLESS OF THE
+FORM OF ACTION OR WHETHER ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+NOTHING IN THIS LICENCE EXCLUDES OR RESTRICTS LIABILITY THAT CANNOT LAWFULLY
+BE EXCLUDED OR RESTRICTED, INCLUDING LIABILITY FOR DEATH OR PERSONAL INJURY
+CAUSED BY NEGLIGENCE, OR FOR FRAUD OR FRAUDULENT MISREPRESENTATION.
+
+10. TERMINATION AND REINSTATEMENT
+
+Your rights under this Licence terminate automatically if You fail to comply
+with its conditions.
+
+If You fully remedy the breach within 30 days after You first become aware of
+it, Your rights under this Licence are automatically reinstated, unless a court
+of competent jurisdiction has determined otherwise. Reinstatement does not
+eliminate liability, if any, for acts that occurred during the breach.
+
+If You do not remedy the breach within that period, renewed permission must be
+obtained from the Licensor. Termination of Your rights does not automatically
+terminate the rights of other recipients who remain in compliance with this
+Licence.
+
+11. GOVERNING LAW AND SEVERABILITY
+
+This Licence is governed by the laws of Northern Ireland, subject to mandatory
+laws that apply notwithstanding this provision. The courts of Northern Ireland
+have non-exclusive jurisdiction over disputes arising under this Licence.
+
+If any provision is found unenforceable, the remaining provisions continue in
+effect to the extent permitted by law.
+
+12. CONTACT
+
+For licensing enquiries or requests for separate commercial terms, contact
+Kitgenix through https://kitgenix.com.
+
+Hoplane by Kitgenix
+https://kitgenix.com
+https://github.com/Kitgenix/hoplane
