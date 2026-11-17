@@ -1,6 +1,11 @@
-# Secrets for Hoplane. Copy to .dev.vars for local development.
-# The "Deploy to Cloudflare" button prompts for these automatically.
-
-# One-time token required to create the first (owner) account at /dashboard.
-# Generate one with:  openssl rand -base64 32
-SETUP_TOKEN=change-me-to-a-long-random-value
+# Hoplane — LOCAL development secrets example.
+# Copy this file to .dev.vars and replace the placeholder before starting locally.
+# Wrangler reads .dev.vars during local development; it does not set production secrets.
+#
+# Generate a random token with: openssl rand -base64 32
+# Store your actual production SETUP_TOKEN securely as a Cloudflare Worker secret:
+#   npx wrangler secret put SETUP_TOKEN
+#
+# SETUP_TOKEN is required for initial owner setup and may be needed for owner recovery.
+# Do not commit .dev.vars, production tokens, or real credentials.
+SETUP_TOKEN=replace-with-a-long-random-token

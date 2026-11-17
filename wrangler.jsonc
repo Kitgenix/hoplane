@@ -1,20 +1,29 @@
 /**
- * Hoplane: Cloudflare configuration.
- * https://kitgenix.com · https://github.com/Kitgenix
+ * Hoplane by Kitgenix — Cloudflare Workers configuration.
+ * https://kitgenix.com
+ * https://github.com/Kitgenix/hoplane
  *
- * Resource IDs are intentionally omitted. Wrangler (>= 4.45) and the
- * "Deploy to Cloudflare" button automatically create the D1 database and KV
- * namespace in YOUR account on first deploy and reuse them afterwards.
- * Prefer explicit IDs? Run `npm run setup` and they are written in below.
+ * This file is a reusable deployment template. Do not commit account-specific
+ * resource IDs or secrets to the upstream repository.
+ *
+ * Wrangler supports automatic provisioning of D1 and KV bindings without
+ * IDs. A local CLI deployment may write provisioned IDs into this file;
+ * Git-connected deployments may instead retain them only in Cloudflare.
+ * Confirm the actual bindings after the first deployment.
+ *
+ * For account-specific pinned IDs, use `npm run setup` in your own copy.
  */
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "hoplane",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-11-01",
-  "observability": { "enabled": true },
+  "observability": {
+    "enabled": true
+  },
 
-  // The Worker handles every request except built dashboard assets.
+  // Requests pass through the Worker unless they are built static assets.
+  // Preserve this routing for short links, the API, and dashboard auth.
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",
@@ -22,6 +31,8 @@
     "run_worker_first": ["/*", "!/assets/*", "!/favicon.svg"]
   },
 
+  // Application data: links, accounts, permissions, and click analytics.
+  // Runtime schema migration logic must be tested before production upgrades.
   "d1_databases": [
     {
       "binding": "DB",
@@ -30,28 +41,32 @@
     }
   ],
 
+  // Eventual-consistency edge cache for link lookups.
   "kv_namespaces": [
     {
       "binding": "CACHE"
     }
   ],
 
-  // Daily housekeeping: analytics retention, expired sessions, salt rotation, optional backup.
-  "triggers": { "crons": ["17 3 * * *"] },
+  // Daily housekeeping: retention, sessions, visitor salt, optional R2 backup.
+  // Cloudflare cron expressions are evaluated in UTC (03:17 UTC daily).
+  "triggers": {
+    "crons": ["17 3 * * *"]
+  },
 
+  // Non-sensitive deployment settings; these are source-controlled.
+  // Keep SETUP_TOKEN in Worker secrets, never in vars.
   "vars": {
-    // Shown in the dashboard and on public pages. Rename freely; the Kitgenix credit stays.
     "SITE_NAME": "Hoplane",
-    // If set, visiting "/" redirects here instead of showing the landing page.
     "HOME_URL": "",
-    // Length of auto-generated slugs.
     "SLUG_LENGTH": "6",
-    // "true" keeps slug case (Abc ≠ abc). Default normalises slugs to lowercase.
     "CASE_SENSITIVE": "false",
-    // Click-level analytics older than this many days is deleted by the daily job.
     "RETENTION_DAYS": "365"
   }
 
-  // Optional: nightly JSON backups of links to R2 (R2 must be enabled on your account).
-  // "r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "hoplane-backups" }]
+  // Optional link-only nightly backups. Enable R2 in your Cloudflare account,
+  // uncomment this binding, and verify the bucket exists after deployment.
+  // "r2_buckets": [
+  //   { "binding": "BACKUPS", "bucket_name": "hoplane-backups" }
+  // ]
 }

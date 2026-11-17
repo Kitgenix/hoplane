@@ -35,7 +35,7 @@ describe('urls', () => {
       }),
     );
     expect(out.searchParams.get('utm_source')).toBe('keep');
-    expect(out.searchParams.get('utm_medium')).toBe('x'); // forwarded first, so UTM preset doesn't override
+    expect(out.searchParams.get('utm_medium')).toBe('email'); // configured UTM takes priority over forwarded query parameters
     expect(out.searchParams.get('ref')).toBe('tw');
     expect(out.searchParams.has('qr')).toBe(false);
   });

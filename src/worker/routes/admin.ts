@@ -45,10 +45,6 @@ routes.post('/users', requireRole('admin'), async (c) => {
   return c.json({ id }, 201);
 });
 
-async function ownerCount(db: D1Database) {
-  return (await db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'owner'").first<{ n: number }>())!.n;
-}
-
 routes.patch('/users/:id', requireRole('admin'), async (c) => {
   const p = c.get('principal');
   const body = parse(
@@ -58,18 +54,50 @@ routes.patch('/users/:id', requireRole('admin'), async (c) => {
   const target = await c.env.DB.prepare('SELECT id, email, role FROM users WHERE id = ?').bind(c.req.param('id')).first<{ id: string; email: string; role: Role }>();
   if (!target) throw notFound('User not found');
   assertCanAssign(p.role, target.role);
-  if (body.role) {
-    assertCanAssign(p.role, body.role);
-    if (target.role === 'owner' && body.role !== 'owner' && (await ownerCount(c.env.DB)) <= 1) throw badRequest('There must always be at least one owner');
+  if (body.role) assertCanAssign(p.role, body.role);
+  // Even administrators must supply their current password to change their own.
+  if (body.password && target.id === p.userId) throw badRequest('Use the account password-change form to change your own password');
+
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  if (body.name !== undefined) {
+    sets.push('name = ?');
+    values.push(body.name);
   }
-  const stmts: D1PreparedStatement[] = [];
-  if (body.name !== undefined) stmts.push(c.env.DB.prepare('UPDATE users SET name = ? WHERE id = ?').bind(body.name, target.id));
-  if (body.role) stmts.push(c.env.DB.prepare('UPDATE users SET role = ? WHERE id = ?').bind(body.role, target.id));
-  if (body.password) {
-    stmts.push(c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(await hashPassword(body.password), target.id));
-    stmts.push(c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(target.id));
+  if (body.role !== undefined) {
+    sets.push('role = ?');
+    values.push(body.role);
   }
-  if (stmts.length) await c.env.DB.batch(stmts);
+  const newPasswordHash = body.password ? await hashPassword(body.password) : null;
+  if (newPasswordHash) {
+    sets.push('password_hash = ?');
+    values.push(newPasswordHash);
+  }
+  if (!sets.length) return c.json({ ok: true });
+
+  // Enforce last-owner safety inside the UPDATE itself. A separate ownerCount()
+  // read is vulnerable when two owners are demoted concurrently.
+  let sql = `UPDATE users SET ${sets.join(', ')} WHERE id = ? AND role = ?`;
+  if (body.role && body.role !== 'owner') {
+    sql += " AND (role != 'owner' OR (SELECT COUNT(*) FROM users WHERE role = 'owner') > 1)";
+  }
+  const update = c.env.DB.prepare(sql).bind(...values, target.id, target.role);
+  if (newPasswordHash) {
+    // Revoke both sessions AND API keys on an administrative password reset.
+    // Match the new hash in the same transaction: if the conditional UPDATE
+    // doesn't succeed, nothing is revoked either.
+    const [result] = await c.env.DB.batch([
+      update,
+      c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND EXISTS (SELECT 1 FROM users WHERE id = ? AND password_hash = ?)')
+        .bind(target.id, target.id, newPasswordHash),
+      c.env.DB.prepare('DELETE FROM api_keys WHERE user_id = ? AND EXISTS (SELECT 1 FROM users WHERE id = ? AND password_hash = ?)')
+        .bind(target.id, target.id, newPasswordHash),
+    ]);
+    if (!result.meta.changes) throw conflict('The account changed or the final owner cannot be demoted');
+  } else {
+    const result = await update.run();
+    if (!result.meta.changes) throw conflict('The account changed or the final owner cannot be demoted');
+  }
   await audit(c.env.DB, p, 'user.update', target.email, Object.keys(body).join(','));
   return c.json({ ok: true });
 });
@@ -81,8 +109,11 @@ routes.delete('/users/:id', requireRole('admin'), async (c) => {
   const target = await c.env.DB.prepare('SELECT email, role FROM users WHERE id = ?').bind(id).first<{ email: string; role: Role }>();
   if (!target) throw notFound('User not found');
   assertCanAssign(p.role, target.role);
-  if (target.role === 'owner' && (await ownerCount(c.env.DB)) <= 1) throw badRequest('There must always be at least one owner');
-  await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
+  // The owner-count test is part of the DELETE, not a racy preliminary query.
+  const res = await c.env.DB.prepare(
+    "DELETE FROM users WHERE id = ? AND role = ? AND (role != 'owner' OR (SELECT COUNT(*) FROM users WHERE role = 'owner') > 1)",
+  ).bind(id, target.role).run();
+  if (!res.meta.changes) throw conflict('The account changed or the final owner cannot be deleted');
   await audit(c.env.DB, p, 'user.delete', target.email);
   return c.json({ ok: true });
 });
@@ -108,8 +139,9 @@ routes.post('/keys', requireRole('viewer'), async (c) => {
     }),
     await c.req.json().catch(() => null),
   );
-  const scopes = [...new Set(body.scopes)].filter((s) => p.scopes.includes(s));
-  if (!scopes.length) throw forbidden('Your role does not allow those permissions');
+  // Refuse unauthorised scopes rather than silently creating a weaker key.
+  if (body.scopes.some((scope) => !p.scopes.includes(scope))) throw forbidden('Your role does not allow one or more requested permissions');
+  const scopes = [...new Set(body.scopes)];
   const key = `hpl_${randomToken(30)}`;
   const id = uuid();
   const now = Date.now();
@@ -118,7 +150,6 @@ routes.post('/keys', requireRole('viewer'), async (c) => {
     .bind(id, p.userId, body.name, key.slice(0, 10), await sha256(key), scopes.join(','), now, expires)
     .run();
   await audit(c.env.DB, p, 'apikey.create', body.name, scopes.join(','));
-  // The full key is returned exactly once.
   return c.json({ id, key, name: body.name, scopes, expires_at: expires }, 201);
 });
 

@@ -3,14 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Hoplane by Kitgenix. Every link has a destination. The self-hosted URL shortener for Cloudflare, with QR codes and privacy-first analytics.",
+  "description": "Hoplane by Kitgenix — a source-available, self-hosted URL shortener for Cloudflare with QR codes and privacy-first analytics.",
   "author": "Kitgenix (https://kitgenix.com)",
   "homepage": "https://kitgenix.com/hoplane",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kitgenix/hoplane.git"
+    "url": "git+https://github.com/Kitgenix/hoplane.git"
   },
-  "bugs": "https://github.com/kitgenix/hoplane/issues",
+  "bugs": "https://github.com/Kitgenix/hoplane/issues",
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "dev": "vite dev",
@@ -22,6 +22,7 @@
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "typecheck": "tsc --noEmit -p tsconfig.worker.json && tsc --noEmit -p tsconfig.app.json",
     "test": "vitest run",
+    "check": "npm run typecheck && npm run build && npm test",
     "cf-typegen": "wrangler types src/worker/worker-configuration.d.ts"
   },
   "cloudflare": {
@@ -36,13 +37,13 @@
     ],
     "bindings": {
       "SETUP_TOKEN": {
-        "description": "One-time token you type on first visit to /dashboard to create the owner account. Use a long random value and keep it private."
+        "description": "Required secret for creating the first owner account and for the documented owner-recovery process. Generate at least 32 random characters; save it securely. Never commit it to Git."
       },
       "DB": {
-        "description": "D1 database that stores links, users and click analytics."
+        "description": "D1 database for links, user accounts, settings, and analytics. Provision this in your own Cloudflare account."
       },
       "CACHE": {
-        "description": "KV namespace used as an edge cache so redirects are fast everywhere."
+        "description": "Cloudflare KV namespace for caching link lookups at the edge. Provision this in your own Cloudflare account."
       }
     }
   },

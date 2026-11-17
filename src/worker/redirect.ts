@@ -1,10 +1,9 @@
 /**
- * The redirect engine: resolves /:slug to its destination.
+ * Hoplane redirect engine.
+ * https://kitgenix.com · https://github.com/Kitgenix/hoplane
  *
- * Order of evaluation:
- *   lookup (KV cache → D1) → availability (disabled / scheduled / expired / click limit)
- *   → password → link-preview crawlers → routing rules → A/B variants
- *   → UTM + query forwarding → record click (async) → optional warning page → redirect
+ * Resolve a slug, enforce eligibility and password protection, select a
+ * destination, reserve a permitted click atomically, then record analytics.
  */
 import type { RoutingRule, Utm, Variant } from '../shared/types';
 import { config, type Bindings } from './env';
@@ -14,29 +13,40 @@ import { rateLimit } from './lib/ratelimit';
 import { isValidSlug, normaliseSlug } from './lib/slug';
 import { buildDestination, safeUrl } from './lib/url';
 import { isSocialCrawler, visitorFrom, type VisitorContext } from './lib/visitor';
-import { recordClick } from './services/analytics';
+import { dailySalt, recordClick } from './services/analytics';
 import { cacheKey, statusOf, type LinkRow } from './services/links';
 import { getSettings } from './services/settings';
 
 const CACHE_TTL = 3600;
 type WaitUntil = { waitUntil(promise: Promise<unknown>): void };
 
+/** Values that must come from D1 on every request, not an eventually-consistent KV value. */
+type FreshLinkState = Pick<
+  LinkRow,
+  'id' | 'slug' | 'updated_at' | 'disabled' | 'starts_at' | 'expires_at' | 'max_clicks' | 'clicks' | 'last_clicked_at'
+>;
+
 async function loadLink(env: Bindings, slug: string, ctx: WaitUntil): Promise<LinkRow | null> {
   if (env.CACHE) {
     const hit = await env.CACHE.get<LinkRow>(cacheKey(slug), { type: 'json', cacheTtl: 60 }).catch(() => null);
     if (hit) {
-      // Click limits need an exact, fresh count.
-      if (hit.max_clicks) {
-        const fresh = await env.DB.prepare('SELECT clicks, disabled FROM links WHERE id = ?').bind(hit.id).first<{ clicks: number; disabled: number }>();
-        if (!fresh) return null;
-        return { ...hit, ...fresh };
+      // A KV deletion or overwrite can remain stale in other regions. A fresh D1
+      // check is mandatory before using ANY cached destination/password/disabled
+      // information. Cache is only trusted when the DB version matches.
+      const state = await env.DB.prepare(
+        `SELECT id, slug, updated_at, disabled, starts_at, expires_at, max_clicks, clicks, last_clicked_at
+         FROM links WHERE slug = ?`,
+      ).bind(slug).first<FreshLinkState>();
+      if (!state) return null;
+      if (hit.id === state.id && hit.updated_at === state.updated_at) {
+        return { ...hit, ...state };
       }
-      return hit;
     }
   }
   const row = await env.DB.prepare('SELECT * FROM links WHERE slug = ?').bind(slug).first<LinkRow>();
   if (row && env.CACHE) {
-    const { notes: _n, ...cacheable } = row;
+    // Never put private notes in the global edge cache.
+    const { notes: _notes, ...cacheable } = row;
     ctx.waitUntil(env.CACHE.put(cacheKey(slug), JSON.stringify({ ...cacheable, notes: '' }), { expirationTtl: CACHE_TTL }).catch(() => {}));
   }
   return row;
@@ -92,27 +102,36 @@ export async function handleRedirect(request: Request, env: Bindings, ctx: WaitU
   if (!link) return notFound();
 
   const url = new URL(request.url);
-  const status = statusOf({
-    disabled: !!link.disabled,
-    expires_at: link.expires_at,
-    starts_at: link.starts_at,
-    max_clicks: link.max_clicks,
-    clicks: link.clicks,
-  });
-  if (status === 'disabled') return messagePage(cfg.siteName, 410, 'Link unavailable', 'This link has been turned off by its owner.');
-  if (status === 'scheduled') return messagePage(cfg.siteName, 404, 'Not live yet', 'This link is scheduled and is not active yet. Please check back later.');
-  if (status === 'expired' || status === 'limit') {
-    const fallback = safeUrl(link.expired_url);
-    if (fallback) return new Response(null, { status: 302, headers: baseHeaders({ Location: fallback, 'Cache-Control': 'no-store' }) });
-    return messagePage(cfg.siteName, 410, 'Link expired', 'This short link is no longer active.');
-  }
+  const unavailable = (row: LinkRow): Response | null => {
+    const status = statusOf({
+      disabled: !!row.disabled,
+      expires_at: row.expires_at,
+      starts_at: row.starts_at,
+      max_clicks: row.max_clicks,
+      clicks: row.clicks,
+    });
+    if (status === 'disabled') return messagePage(cfg.siteName, 410, 'Link unavailable', 'This link has been turned off by its owner.');
+    if (status === 'scheduled') return messagePage(cfg.siteName, 404, 'Not live yet', 'This link is scheduled and is not active yet. Please check back later.');
+    if (status === 'expired' || status === 'limit') {
+      const fallback = safeUrl(row.expired_url);
+      if (fallback) return new Response(null, { status: 302, headers: baseHeaders({ Location: fallback, 'Cache-Control': 'no-store' }) });
+      return messagePage(cfg.siteName, 410, 'Link expired', 'This short link is no longer active.');
+    }
+    return null;
+  };
+  const initialUnavailable = unavailable(link);
+  if (initialUnavailable) return initialUnavailable;
 
   const visitor = visitorFrom(request);
 
-  // Password protection
+  // Password protection: password POSTs are later redirected with HTTP 303,
+  // never with 307/308 (which could forward the submitted password).
   if (link.password_hash) {
     if (request.method !== 'POST') return passwordPage(cfg.siteName, link.slug);
-    const ipKey = (await sha256(visitor.ip || 'unknown')).slice(0, 16);
+    // Salt the rate-limit key so a stored hash of a low-entropy IPv4 address
+    // cannot be enumerated offline. Use the existing per-day random salt.
+    const salt = await dailySalt(env.DB);
+    const ipKey = (await sha256(`${salt}|password:${link.id}|${visitor.ip || 'unknown'}`)).slice(0, 32);
     if (!(await rateLimit(env.DB, `pw:${link.id}:${ipKey}`, 10, 10 * 60_000))) {
       return passwordPage(cfg.siteName, link.slug, 'Too many attempts. Please wait a few minutes and try again.', 429);
     }
@@ -125,7 +144,6 @@ export async function handleRedirect(request: Request, env: Bindings, ctx: WaitU
     return new Response('Method not allowed', { status: 405, headers: baseHeaders({ Allow: 'GET, HEAD' }) });
   }
 
-  // Choose the destination
   const rules = parse<RoutingRule[]>(link.rules, []);
   const variants = parse<Variant[]>(link.variants, []);
   let target = link.url;
@@ -143,7 +161,7 @@ export async function handleRedirect(request: Request, env: Bindings, ctx: WaitU
     forwardFrom: link.forward_query ? url.searchParams : null,
   });
 
-  // Link-preview crawlers get Open Graph tags when the owner customised the preview.
+  // A social crawler requesting a customised preview does not follow the link.
   if (request.method === 'GET' && isSocialCrawler(visitor.ua) && (link.title || link.description || link.image)) {
     return previewPage(cfg.siteName, {
       title: link.title,
@@ -154,18 +172,51 @@ export async function handleRedirect(request: Request, env: Bindings, ctx: WaitU
     });
   }
 
-  // Analytics never delay the redirect.
-  if (request.method !== 'HEAD') {
-    ctx.waitUntil(
-      (async () => {
-        const settings = await getSettings(env.DB);
-        if (visitor.bot && !settings.track_bots) return;
-        await recordClick(env.DB, link.id, visitor, { source: url.searchParams.has('qr') ? 'qr' : 'link', variant, destination });
-      })().catch((err) => console.error('click recording failed', err)),
-    );
+  const settings = await getSettings(env.DB);
+  const shouldRecordAnalytics = request.method !== 'HEAD' && (!visitor.bot || settings.track_bots);
+  // User-Agent is caller-controlled. Excluding bots from analytics MUST NOT let
+  // an attacker bypass max_clicks by sending a bot User-Agent. For capped links,
+  // every successful non-HEAD request reserves an accepted redirect, including
+  // requests classified as bots. Excluded bots are not written to click analytics.
+  const shouldReserve = request.method !== 'HEAD' && (shouldRecordAnalytics || link.max_clicks !== null);
+
+  if (shouldReserve) {
+    // A single conditional D1 UPDATE both reserves the click and enforces
+    // the limit atomically across Worker isolates. updated_at also detects
+    // concurrent changes to the link's security settings or destination.
+    const now = Date.now();
+    const reserved = await env.DB.prepare(
+      `UPDATE links
+       SET clicks = clicks + 1, last_clicked_at = ?
+       WHERE id = ? AND slug = ? AND updated_at = ? AND disabled = 0
+         AND (starts_at IS NULL OR starts_at <= ?)
+         AND (expires_at IS NULL OR expires_at > ?)
+         AND (max_clicks IS NULL OR clicks < max_clicks)
+       RETURNING id`,
+    ).bind(now, link.id, link.slug, link.updated_at, now, now).first<{ id: string }>();
+
+    if (!reserved) {
+      // The link was edited, removed, disabled, expired, or reached its limit
+      // between lookup and reservation. Never redirect using old cached data.
+      const latest = await env.DB.prepare('SELECT * FROM links WHERE id = ?').bind(link.id).first<LinkRow>();
+      if (!latest || latest.slug !== slug) return notFound();
+      const blocked = unavailable(latest);
+      if (blocked) return blocked;
+      return messagePage(cfg.siteName, 409, 'Link changed', 'This short link was updated. Please try again.');
+    }
+
+    // Analytics are best-effort asynchronous; the accepted request was already
+    // counted in D1. Keep excluded bots out of detailed analytics even though
+    // their redirects consume a capped link's allowance.
+    if (shouldRecordAnalytics) {
+      ctx.waitUntil(recordClick(env.DB, link.id, visitor, {
+        source: url.searchParams.has('qr') ? 'qr' : 'link',
+        variant,
+        destination,
+      }, { counterReserved: true }).catch((err) => console.error('click recording failed', err)));
+    }
   }
 
-  const settings = await getSettings(env.DB);
   if (link.warning || settings.warn_all) return warningPage(cfg.siteName, destination);
 
   const code = request.method === 'POST' ? 303 : [301, 302, 307, 308].includes(link.redirect_code) ? link.redirect_code : 302;
@@ -173,7 +224,8 @@ export async function handleRedirect(request: Request, env: Bindings, ctx: WaitU
     status: code,
     headers: baseHeaders({
       Location: destination,
-      // Permanent redirects may be cached by browsers; temporary ones are never cached so every click is counted.
+      // Permanent redirects may be browser-cached and cannot be revoked
+      // immediately by changing a link. Temporary redirects are uncached.
       'Cache-Control': code === 301 || code === 308 ? 'public, max-age=300' : 'private, no-store',
     }),
   });

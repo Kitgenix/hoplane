@@ -27,12 +27,22 @@ export interface ClickExtra {
   destination: string;
 }
 
-export async function recordClick(db: D1Database, linkId: string, v: VisitorContext, extra: ClickExtra) {
+/**
+ * Write a click event. If a redirect already reserved its click atomically,
+ * do not increment the counter a second time.
+ * Existing callers may omit options to retain the original behaviour.
+ */
+export async function recordClick(
+  db: D1Database,
+  linkId: string,
+  v: VisitorContext,
+  extra: ClickExtra,
+  options: { counterReserved?: boolean } = {},
+) {
   const now = Date.now();
   const salt = await dailySalt(db, now);
   const visitor = v.ip || v.ua ? (await sha256(`${salt}|${v.ip}|${v.ua}`)).slice(0, 16) : null;
-  await db.batch([
-    db
+  const insert = db
       .prepare(
         `INSERT INTO clicks (link_id, ts, visitor, country, region, city, continent, latitude, longitude, referrer, device, os, browser, language, source, variant, destination)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -40,9 +50,17 @@ export async function recordClick(db: D1Database, linkId: string, v: VisitorCont
       .bind(
         linkId, now, visitor, v.country, v.region, v.city, v.continent, v.latitude, v.longitude, v.referrer,
         v.device, v.os, v.browser, v.language, extra.source, extra.variant, extra.destination.slice(0, 2048),
-      ),
-    db.prepare('UPDATE links SET clicks = clicks + 1, last_clicked_at = ? WHERE id = ?').bind(now, linkId),
-  ]);
+      );
+  if (options.counterReserved) {
+    // This request was already counted using the guarded D1 UPDATE in redirect.ts.
+    await insert.run();
+  } else {
+    // Preserve the original method for legacy callers and existing tests.
+    await db.batch([
+      insert,
+      db.prepare('UPDATE links SET clicks = clicks + 1, last_clicked_at = ? WHERE id = ?').bind(now, linkId),
+    ]);
+  }
 }
 
 /* ------------------------------------------------------------------ queries */

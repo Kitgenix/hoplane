@@ -1,21 +1,35 @@
-# Dependencies and build output
+# Hoplane — files that must not be committed to Git.
+
+# Dependencies and generated build output
 node_modules/
 dist/
 coverage/
 *.tsbuildinfo
 
-# Wrangler local state (local D1/KV data, temp builds)
+# Cloudflare Wrangler local state (including local D1 and KV)
 .wrangler/
 
-# Secrets: never commit. Only the example file is tracked.
+# Local development secrets. Commit example templates only.
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
 .env
 .env.*
+!.env.example
 
-# Logs
+# Local tooling and test artefacts
+.cache/
+.vite/
+test-results/
+playwright-report/
+.npm/
+
+# Logs and diagnostics
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # OS and editor files
 .DS_Store
@@ -23,9 +37,21 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+*.swo
 
-# Personal Claude Code settings
+# Developer-specific AI assistant settings
 .claude/settings.local.json
 
-# Private deployment notes (not part of the public project)
-tdsl-link.md
+# Local environment tools
+.envrc
+.direnv/
+
+# Local database files created outside Wrangler
+*.sqlite
+*.sqlite3
+*.sqlite3-journal
+
+# Private certificates and keys
+*.pem
+*.p12
+*.pfx

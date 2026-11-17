@@ -1,7 +1,13 @@
--- Hoplane: initial schema. https://kitgenix.com · https://github.com/Kitgenix
--- All timestamps are Unix epoch milliseconds (INTEGER).
--- Applied automatically by the Worker on first request, or manually with
--- `npm run db:migrate`. Both paths share Wrangler's d1_migrations table.
+-- Hoplane initial D1 schema.
+-- https://kitgenix.com · https://github.com/Kitgenix/hoplane
+-- All timestamps use Unix epoch milliseconds (INTEGER).
+--
+-- This SQL file is applied by `wrangler d1 migrations apply` (tracked in
+-- `d1_migrations`). Automatic first-request migration is an APPLICATION
+-- feature and must be verified in the Worker source; Wrangler provisioning
+-- a new database does not apply this SQL by itself.
+-- Avoid editing this file after it has been applied to a deployment.
+-- Add a new numbered migration for future schema changes.
 
 CREATE TABLE IF NOT EXISTS users (
   id            TEXT PRIMARY KEY,
@@ -65,9 +71,9 @@ CREATE TABLE IF NOT EXISTS links (
 CREATE INDEX IF NOT EXISTS idx_links_created ON links(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_links_clicks ON links(clicks DESC);
 
--- One row per redirect. No IP addresses are stored: `visitor` is a hash
--- of IP + user agent with a random salt that is replaced every day and then discarded,
--- so visitors can be counted for a day but never tracked across days.
+-- One row per redirect. No raw IP address column is present. The visitor
+-- value is intended to be a daily salted hash of IP + user agent; actual
+-- rotation, deletion, and data-handling guarantees depend on Worker code.
 CREATE TABLE IF NOT EXISTS clicks (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   link_id     TEXT NOT NULL,

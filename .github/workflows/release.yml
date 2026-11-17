@@ -1,0 +1,138 @@
+# Hoplane by Kitgenix — tagged GitHub Releases only.
+# Does not deploy to Cloudflare or publish third-party packages.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hoplane-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check TypeScript
+        run: npm run typecheck
+
+      - name: Build production assets
+        run: npm run build
+
+      - name: Run unit, integration and attribution tests
+        run: npm test
+
+  publish:
+    name: Publish GitHub Release
+    needs: verify
+    # Forks can run release verification, but do not publish releases by default.
+    if: github.repository == 'Kitgenix/hoplane'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out full history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check tag is on main
+        shell: bash
+        run: |
+          if ! git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+            echo 'Release rejected: tag must point to a commit contained in main.' >&2
+            exit 1
+          fi
+
+      - name: Validate version and prepare release notes
+        id: notes
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import datetime
+          import os
+          import pathlib
+          import re
+          import sys
+
+          tag = os.environ['RELEASE_TAG']
+          pattern = r'^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$'
+          parsed = re.fullmatch(pattern, tag)
+          if not parsed:
+              sys.exit(f'Invalid version tag {tag!r}: expected vMAJOR.MINOR.PATCH[-PRERELEASE].')
+
+          prerelease = parsed.group(4)
+          if prerelease and any(part.isdigit() and len(part) > 1 and part.startswith('0') for part in prerelease.split('.')):
+              sys.exit('Invalid SemVer prerelease: numeric identifiers must not have leading zeroes.')
+
+          changelog = pathlib.Path('CHANGELOG.md')
+          if not changelog.is_file():
+              sys.exit('CHANGELOG.md is missing. Document the release before tagging.')
+
+          content = changelog.read_text(encoding='utf-8')
+          version = tag[1:]
+          heading = re.search(r'^## \[' + re.escape(version) + r'\] - (\d{4}-\d{2}-\d{2})\s*$', content, re.MULTILINE)
+          if not heading:
+              sys.exit(f'Add a dated heading "## [{version}] - YYYY-MM-DD" to CHANGELOG.md before releasing.')
+          try:
+              datetime.date.fromisoformat(heading.group(1))
+          except ValueError as exc:
+              sys.exit(f'Invalid release date in CHANGELOG.md: {exc}')
+
+          remainder = content[heading.end():]
+          next_section = re.search(r'^## ', remainder, re.MULTILINE)
+          release_body = remainder[:next_section.start() if next_section else len(remainder)].strip()
+          if not re.search(r'^### (Added|Changed|Deprecated|Removed|Fixed|Security)\b', release_body, re.MULTILINE):
+              sys.exit('The version section must contain at least one Keep a Changelog change category.')
+
+          pathlib.Path('release-notes.md').write_text(
+              f'{release_body}\n\n---\n\nHoplane by [Kitgenix](https://kitgenix.com) · '
+              '[Source repository](https://github.com/Kitgenix/hoplane)\n',
+              encoding='utf-8',
+          )
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'prerelease={str(bool(prerelease)).lower()}\n')
+          print(f'Validated {tag} and extracted release notes from CHANGELOG.md.')
+          PY
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          IS_PRERELEASE: ${{ steps.notes.outputs.prerelease }}
+        run: |
+          flags=(--verify-tag --title "Hoplane ${RELEASE_TAG}" --notes-file release-notes.md)
+          if [[ "$IS_PRERELEASE" == 'true' ]]; then
+            flags+=(--prerelease --latest=false)
+          fi
+          gh release create "$RELEASE_TAG" "${flags[@]}"

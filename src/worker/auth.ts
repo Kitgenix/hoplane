@@ -21,6 +21,39 @@ export function atLeast(role: Role, min: Role) {
   return RANK[role] >= RANK[min];
 }
 
+/**
+ * Block browser-originated cross-origin mutations, including unauthenticated
+ * login/setup/logout requests. A non-browser caller without these headers is
+ * allowed; credential-submission endpoints separately require application/json,
+ * which cannot be sent by a simple cross-origin HTML form.
+ *
+ * This is defence in depth, not a replacement for a CSRF token in high-risk flows.
+ */
+export function assertSameOrigin(c: Context<AppEnv>) {
+  const origin = c.req.header('origin');
+  const site = c.req.header('sec-fetch-site');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    throw new HttpError(403, 'Cross-site request blocked');
+  }
+  if (site && site !== 'same-origin' && site !== 'none') {
+    throw new HttpError(403, 'Cross-site request blocked');
+  }
+}
+
+/** Reject cross-site auth writes before they reach route handlers. */
+export const protectAuthWrite: MiddlewareHandler<AppEnv> = async (c, next) => {
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) assertSameOrigin(c);
+  await next();
+};
+
+/** Credentials must arrive as JSON, not as a cross-origin simple form POST. */
+export function requireJson(c: Context<AppEnv>) {
+  const contentType = c.req.header('content-type') ?? '';
+  if (!/^application\/json(?:\s*;|\s*$)/i.test(contentType)) {
+    throw new HttpError(415, 'Use Content-Type: application/json');
+  }
+}
+
 export async function createSession(c: Context<AppEnv>, userId: string) {
   const token = randomToken(32);
   const now = Date.now();
@@ -87,14 +120,8 @@ export const authenticate: MiddlewareHandler<AppEnv> = async (c, next) => {
     principal = await fromApiKey(c, auth.slice(7).trim());
   } else {
     principal = await fromSession(c);
-    // CSRF: cookie-authenticated writes must come from this origin.
-    if (principal && !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
-      const origin = c.req.header('origin');
-      const site = c.req.header('sec-fetch-site');
-      if ((origin && origin !== new URL(c.req.url).origin) || (site && site !== 'same-origin' && site !== 'none')) {
-        throw new HttpError(403, 'Cross-site request blocked');
-      }
-    }
+    // Browser cookie writes must be same-origin, not merely same-site.
+    if (principal && !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) assertSameOrigin(c);
   }
   if (!principal) throw new HttpError(401, 'Sign in to continue');
   c.set('principal', principal);

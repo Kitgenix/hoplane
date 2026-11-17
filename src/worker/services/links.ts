@@ -354,7 +354,9 @@ export async function updateLink(env: Bindings, idOrSlug: string, raw: unknown, 
   if (input.max_clicks !== undefined) set('max_clicks', input.max_clicks);
   if (input.disabled !== undefined) set('disabled', input.disabled ? 1 : 0);
   if (!sets.length) return toLink(current, origin);
-  set('updated_at', Date.now());
+  // Ensure the cache version changes even if two edits happen in the same millisecond.
+  sets.push('updated_at = MAX(updated_at + 1, ?)');
+  args.push(Date.now());
 
   try {
     await env.DB.prepare(`UPDATE links SET ${sets.join(', ')} WHERE id = ?`).bind(...args, current.id).run();
@@ -362,7 +364,7 @@ export async function updateLink(env: Bindings, idOrSlug: string, raw: unknown, 
     if (String(err).includes('UNIQUE')) throw conflict(`The slug "${newSlug}" is already taken`);
     throw err;
   }
-  await purgeCache(env, current.slug);
+  await purgeCache(env, current.slug, ...(newSlug ? [newSlug] : []));
   await audit(env.DB, p, 'link.update', newSlug ?? current.slug, Object.keys(input).join(','));
   return toLink((await getLinkRow(env.DB, current.id))!, origin);
 }
@@ -388,7 +390,7 @@ export async function deleteLinks(env: Bindings, ids: string[], p: Principal | n
 export async function setDisabled(env: Bindings, ids: string[], disabled: boolean, p: Principal | null) {
   if (!ids.length) return 0;
   const ph = ids.map(() => '?').join(',');
-  const { results } = await env.DB.prepare(`UPDATE links SET disabled = ?, updated_at = ? WHERE id IN (${ph}) RETURNING slug`)
+  const { results } = await env.DB.prepare(`UPDATE links SET disabled = ?, updated_at = MAX(updated_at + 1, ?) WHERE id IN (${ph}) RETURNING slug`)
     .bind(disabled ? 1 : 0, Date.now(), ...ids)
     .all<{ slug: string }>();
   await purgeCache(env, ...results.map((r) => r.slug));
@@ -398,13 +400,16 @@ export async function setDisabled(env: Bindings, ids: string[], disabled: boolea
 
 export async function addTags(env: Bindings, ids: string[], tags: string[], p: Principal | null) {
   let n = 0;
+  const affectedSlugs: string[] = [];
   for (const id of ids) {
     const row = await getLinkRow(env.DB, id);
     if (!row) continue;
     const next = dedupe([...json<string[]>(row.tags, []), ...tags]);
-    await env.DB.prepare('UPDATE links SET tags = ?, updated_at = ? WHERE id = ?').bind(JSON.stringify(next), Date.now(), row.id).run();
+    await env.DB.prepare('UPDATE links SET tags = ?, updated_at = MAX(updated_at + 1, ?) WHERE id = ?').bind(JSON.stringify(next), Date.now(), row.id).run();
+    affectedSlugs.push(row.slug);
     n++;
   }
+  await purgeCache(env, ...affectedSlugs);
   await audit(env.DB, p, 'link.tag', `${n} links`, tags.join(','));
   return n;
 }

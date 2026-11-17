@@ -1,8 +1,14 @@
 /**
- * Fixed-window rate limiter stored in D1, so it works on every Cloudflare plan
- * with no extra configuration. Returns true when the request is allowed.
+ * Fixed-window rate limiter stored in D1. The UPSERT is atomic for a given key
+ * across Worker isolates; unlike a read-then-write limiter it cannot be raced.
+ * Returns true only when D1 confirms the request is within the window's limit.
+ *
+ * Callers must use privacy-safe keys; never store raw IP addresses here.
  */
 export async function rateLimit(db: D1Database, key: string, limit: number, windowMs: number): Promise<boolean> {
+  if (!key || !Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(windowMs) || windowMs < 1) {
+    throw new RangeError('Invalid rate-limit key or limits');
+  }
   const now = Date.now();
   const row = await db
     .prepare(
@@ -14,7 +20,8 @@ export async function rateLimit(db: D1Database, key: string, limit: number, wind
     )
     .bind(key, now + windowMs, now)
     .first<{ count: number }>();
-  return (row?.count ?? 0) <= limit;
+  // Fail closed if a database driver unexpectedly returns no row.
+  return row !== null && row !== undefined && row.count <= limit;
 }
 
 export async function resetRateLimit(db: D1Database, key: string) {
