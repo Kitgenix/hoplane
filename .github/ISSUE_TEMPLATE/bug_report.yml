@@ -1,0 +1,124 @@
+name: "Bug report"
+description: "Report a reproducible problem with Hoplane. Do not disclose security vulnerabilities here."
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve **Hoplane by Kitgenix**.
+
+        **Security issue? Do not submit this form.** Report vulnerabilities privately at
+        https://github.com/Kitgenix/hoplane/security/advisories/new or follow
+        [SECURITY.md](https://github.com/Kitgenix/hoplane/blob/main/SECURITY.md).
+
+        Please remove passwords, API keys, `SETUP_TOKEN`, cookies, access tokens,
+        personal data, and any other secrets from logs and screenshots.
+        For deployment help rather than a reproducible bug, see
+        [SUPPORT.md](https://github.com/Kitgenix/hoplane/blob/main/SUPPORT.md).
+  - type: checkboxes
+    id: before-submitting
+    attributes:
+      label: Before submitting
+      options:
+        - label: "I searched existing open and closed issues for the same problem."
+          required: true
+        - label: "This report does not contain a suspected security vulnerability."
+          required: true
+        - label: "I removed credentials, personal information, and other sensitive data."
+          required: true
+  - type: input
+    id: hoplane-version
+    attributes:
+      label: Hoplane version or commit
+      description: "Use the version shown in Settings > About, a release tag, or the deployed commit SHA."
+      placeholder: "e.g. v1.0.0, main @ <commit SHA>, or unknown"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - "Deployment / first-time setup"
+        - "Sign-in / authentication / team roles"
+        - "Link management / redirects / routing"
+        - "QR codes / link previews"
+        - "Analytics / privacy / retention"
+        - "REST API / MCP"
+        - "Import / export / R2 backups"
+        - "Dashboard / accessibility / UI"
+        - "Database migrations / D1 / KV"
+        - "Other / unsure"
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment-method
+    attributes:
+      label: Deployment method
+      options:
+        - "Cloudflare Deploy button (Git-connected)"
+        - "Command line (Wrangler / npm run deploy)"
+        - "Local development (npm run dev)"
+        - "Other / unsure"
+    validations:
+      required: true
+  - type: textarea
+    id: observed-behaviour
+    attributes:
+      label: What happened?
+      description: "Describe the incorrect behaviour and include error messages where useful (sanitised)."
+      placeholder: "Explain what you saw and when it occurs."
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behaviour
+    attributes:
+      label: What did you expect?
+      placeholder: "Describe the result you expected."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: "Use a test link and non-sensitive example data. Include steps another person can follow."
+      placeholder: |
+        1. Deploy or open ...
+        2. Configure a test link with ...
+        3. Visit or click ...
+        4. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment (if relevant)
+      description: "Provide only relevant details. Never paste secrets or private account identifiers."
+      placeholder: |
+        - Cloudflare plan (Free / Paid / unknown):
+        - Browser and version:
+        - Operating system:
+        - Node.js / npm / Wrangler versions:
+        - Custom domain or workers.dev (no private URLs):
+        - Relevant Cloudflare bindings (names only, no credentials):
+    validations:
+      required: false
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitised logs, screenshots, or additional details
+      description: "Optional. Remove tokens, private links, email addresses, personal data and sensitive headers first."
+      placeholder: "Paste sanitised output or attach a screenshot."
+    validations:
+      required: false
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often does this happen?
+      options:
+        - "Every time"
+        - "Intermittently"
+        - "Once"
+        - "Unknown"
+    validations:
+      required: false

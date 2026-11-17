@@ -1,0 +1,14 @@
+# GitHub issue template chooser for Hoplane by Kitgenix.
+# Prevent unstructured public issues for contributors; repository maintainers
+# with write access can still see GitHub's "Blank issue" option.
+blank_issues_enabled: false
+contact_links:
+  - name: "Security vulnerability (private report)"
+    url: "https://github.com/Kitgenix/hoplane/security/advisories/new"
+    about: "Do not post vulnerabilities publicly. Use private reporting, or follow SECURITY.md if unavailable."
+  - name: "Deployment help and support"
+    url: "https://github.com/Kitgenix/hoplane/blob/main/SUPPORT.md"
+    about: "Find installation, Cloudflare configuration, troubleshooting, and support guidance."
+  - name: "README and troubleshooting"
+    url: "https://github.com/Kitgenix/hoplane#troubleshooting"
+    about: "Check documented setup and known issues before opening a bug report."

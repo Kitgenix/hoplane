@@ -1,0 +1,82 @@
+name: "Feature request"
+description: "Suggest a new capability or improvement to Hoplane."
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement to **Hoplane by Kitgenix**.
+
+        Please check the [roadmap](https://github.com/Kitgenix/hoplane/blob/main/ROADMAP.md)
+        and existing issues first. Hoplane is designed to stay Cloudflare-native,
+        self-hosted, privacy-conscious, and easy to maintain in independent forks.
+        A request is not a commitment to implement the feature.
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Before submitting
+      options:
+        - label: "I checked the roadmap and searched existing issues for this request."
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Feature area
+      options:
+        - "Links / redirects / targeting"
+        - "QR codes / social previews"
+        - "Analytics / reporting"
+        - "Teams / roles / security"
+        - "REST API / MCP / integrations"
+        - "Cloudflare deployment / upgrades"
+        - "Dashboard / accessibility / translations"
+        - "Import / export / backups"
+        - "Documentation / developer experience"
+        - "Other"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: "Describe the problem, who encounters it, and why solving it matters."
+      placeholder: "As a self-hosted operator / team member / developer, I need ... because ..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: "Describe how the feature could work, including expected behaviour."
+      placeholder: "A good solution would ..."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+      description: "What have you tried or considered instead?"
+    validations:
+      required: false
+  - type: textarea
+    id: impact
+    attributes:
+      label: Cloudflare, privacy, security, or compatibility considerations
+      description: "Optional. Mention any D1/KV/R2 usage, Workers limits, permissions, privacy, backwards compatibility, or migration implications."
+    validations:
+      required: false
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples, mockups, or references
+      description: "Optional. Share relevant screenshots or links; do not include secrets or private user data."
+    validations:
+      required: false
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Would you be willing to help?
+      description: "Optional, and not required for consideration."
+      options:
+        - label: "I would consider contributing an implementation or tests."
+        - label: "I can help test or review the feature."
