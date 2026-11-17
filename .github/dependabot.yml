@@ -1,0 +1,51 @@
+# Hoplane by Kitgenix
+# https://github.com/Kitgenix/hoplane
+#
+# Dependabot opens pull requests for dependency updates; it does not
+# merge or deploy them automatically. Review CI results before merging.
+# Security update pull requests are intentionally NOT grouped here.
+
+version: 2
+
+updates:
+  # Keep the root npm dependency manifest and lockfile current.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/London"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-minor-and-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Major updates remain in individual PRs for compatibility review.
+
+  # Keep third-party actions in .github/workflows current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+      timezone: "Europe/London"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      actions-minor-and-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Major action upgrades remain separate for manual review.
