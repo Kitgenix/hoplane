@@ -1,27 +1,57 @@
+# Continuous integration for Hoplane by Kitgenix.
+# Tests are local: no Cloudflare deployment credentials are required.
 name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Tests do not need write access to the repository or any deployment secrets.
+permissions:
+  contents: read
+
+# Stop obsolete runs when a newer commit is pushed to the same branch or PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
+    name: Test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        # 22 is the minimum supported version (npm 10); 24 is the current LTS (npm 11).
         node-version: [22, 24]
-    name: test (Node ${{ matrix.node-version }})
+
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run build
-      # Integration tests run inside the real Workers runtime (workerd) with local D1 and KV.
-      # They include checks that the Kitgenix attribution links are present.
-      - run: npm test
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check TypeScript types
+        run: npm run typecheck
+
+      - name: Build production assets
+        run: npm run build
+
+      # Tests execute in workerd with local D1 and KV, according to Hoplane's README.
+      # The existing test suite includes checks for mandatory Kitgenix attribution.
+      - name: Run unit, integration and attribution tests
+        run: npm test
