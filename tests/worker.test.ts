@@ -1,7 +1,7 @@
 import { createExecutionContext, env as testEnv, waitOnExecutionContext } from 'cloudflare:test';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { runMaintenance } from '../src/worker/cron';
-import type { Bindings } from '../src/worker/env';
+import { VERSION, type Bindings } from '../src/worker/env';
 import { clearAccessKeyCache } from '../src/worker/lib/access';
 import { clearSafeBrowsingCache } from '../src/worker/lib/safe-browsing';
 import worker from '../src/worker/index';
@@ -533,12 +533,12 @@ describe('destination and update checks', () => {
     try {
       expect((await runMaintenance({ ...env, ...on })).updateCheck).toBe('ok');
       expect(net.calls[0].url.href).toBe('https://api.github.com/repos/kitgenix/hoplane/releases/latest');
-      expect(new Headers(net.calls[0].init?.headers).get('user-agent')).toBe('Hoplane/1.0.0');
+      expect(new Headers(net.calls[0].init?.headers).get('user-agent')).toBe(`Hoplane/${VERSION}`);
     } finally {
       net.restore();
     }
     const status = await json(await call('/api/updates', { bindings: on }));
-    expect(status).toMatchObject({ enabled: true, current: '1.0.0', latest: '99.0.0', update_available: true });
+    expect(status).toMatchObject({ enabled: true, current: VERSION, latest: '99.0.0', update_available: true });
     // With checks turned off the banner stays hidden and "Check now" is refused.
     expect((await json(await call('/api/updates'))).update_available).toBe(false);
     expect((await call('/api/updates/check', { method: 'POST', bindings: { UPDATE_CHECK: 'false' } })).status).toBe(400);

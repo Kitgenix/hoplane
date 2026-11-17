@@ -75,6 +75,12 @@ The initial Hoplane feature set establishes a complete foundation for URL shorte
 
 -   Destination-domain blocklists.
 
+-   Redirects for unknown links to a URL of your choice.
+
+-   Optional automatic cleanup of long-expired links.
+
+-   Password access for scripts and API clients via the `X-Link-Password` header.
+
 ### Intelligent Redirects
 
 -   Geographic targeting.
@@ -133,6 +139,8 @@ The initial Hoplane feature set establishes a complete foundation for URL shorte
 
 -   Administrative audit logging.
 
+-   Optional Cloudflare Access single sign-on.
+
 ### Developer Tools and Integrations
 
 -   REST API for programmatic link management.
@@ -147,6 +155,24 @@ The initial Hoplane feature set establishes a complete foundation for URL shorte
 
 -   Optional Cloudflare R2 link backups.
 
+-   Signed webhooks (Standard Webhooks format) with optional Cloudflare Queues retries.
+
+-   OpenAPI 3.1 specification served by every deployment.
+
+-   Faithful imports from Sink, including routing rules and original passwords.
+
+### Safety and Monitoring
+
+-   Optional malware and phishing checks using Cloudflare's security DNS.
+
+-   Optional daily destination health checks, with a "Needs attention" view.
+
+-   Dashboard notice when a newer Hoplane release is available.
+
+### Internationalisation
+
+-   Visitor-facing pages in ten languages, chosen from the visitor's browser language.
+
 * * * * *
 
 Planned Development
@@ -157,8 +183,6 @@ The following improvements are planned or under consideration for future release
 Features are grouped by functionality rather than assigned to fixed release dates. Their scope and delivery order may change as development progresses.
 
 ### Authentication and Collaboration
-
--   [x] **Cloudflare Access SSO:** Support Cloudflare Access identities and map authenticated users to Hoplane accounts.
 
 -   [ ] **Folders and Workspaces:** Introduce improved link organisation and collaboration tools for larger teams.
 
@@ -172,14 +196,6 @@ Features are grouped by functionality rather than assigned to fixed release date
 
 -   [ ] **Advanced Analytics Filtering:** Enable click-level filtering and drill-down from analytics breakdowns.
 
-### Automation and Integrations
-
--   [x] **Webhooks:** Trigger configurable events when links are clicked, created, updated, or deleted.
-
--   [x] **Link Health Monitoring:** Periodically check destination URLs and identify unavailable or problematic links.
-
--   [x] **OpenAPI Specification:** Publish a formal API specification with generated reference documentation.
-
 ### Artificial Intelligence
 
 -   [ ] **Workers AI Integration:** Introduce optional AI-assisted slug and link-description suggestions through Cloudflare Workers AI.
@@ -187,8 +203,6 @@ Features are grouped by functionality rather than assigned to fixed release date
 -   [ ] **Optional AI Configuration:** Keep AI functionality opt-in and avoid making it a requirement for core deployment.
 
 ### Accessibility and Internationalisation
-
--   [x] **Visitor Page Translations:** Link error, password and warning pages in ten languages, chosen from the visitor's browser language.
 
 -   [ ] **Dashboard Translations:** Introduce internationalisation (i18n) support for multiple languages.
 
