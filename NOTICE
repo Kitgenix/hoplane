@@ -1,20 +1,82 @@
+HOPLANE — NOTICE
+================
+
 Hoplane by Kitgenix
-Every link has a destination.
+Copyright (c) 2026 Kitgenix (https://kitgenix.com). All rights reserved.
 
-Copyright (c) 2026 Kitgenix
+Official website: https://kitgenix.com
+Original repository: https://github.com/Kitgenix/hoplane
 
-Product: https://kitgenix.com/hoplane
-Website: https://kitgenix.com
-GitHub:  https://github.com/Kitgenix
-Source:  https://github.com/kitgenix/hoplane
+1. LICENSING
+------------
 
-Hoplane is an original implementation. Its feature set was informed by
-other open-source link shorteners, but it contains no code from them.
+Hoplane is made available under the Hoplane Source-Available Licence.
+The complete terms are provided in the LICENSE file distributed with
+this project.
 
-Attribution links to Kitgenix.com and the Kitgenix GitHub must remain visible
-on every HTML page a deployment serves (see LICENSE, section 2). The links are
-defined in src/shared/attribution.ts and are checked by the test suite.
+This is a custom, source-available licence, not an Open Source
+Initiative (OSI)-approved open-source licence. The current licence is
+a draft pending legal review before public release.
 
-Third-party packages used at runtime: Hono (MIT), Zod (MIT), React (MIT),
-wouter (Unlicense), lucide-react (ISC), uqr (MIT). Full licence texts are in
-each package under node_modules.
+The LICENSE file governs permission to use, copy, modify, fork,
+distribute, host and commercially deploy Hoplane. This NOTICE summarises
+selected requirements but does not replace or amend the LICENSE file.
+
+2. REQUIRED KITGENIX ATTRIBUTION
+--------------------------------
+
+Under the Hoplane Source-Available Licence, each deployment, including
+modified and rebranded deployments, must retain visible, working links
+to both of the following destinations on every HTML page generated or
+served by Hoplane, where such pages exist:
+
+  Kitgenix:                  https://kitgenix.com
+  Original Hoplane project:  https://github.com/Kitgenix/hoplane
+
+The links may be restyled and placed in a footer, sidebar or similar
+location, but must remain plainly visible, reasonably legible and
+functional. The LICENSE file defines the full requirements and
+exceptions, including the exclusion of HTTP redirects, API responses
+and other non-HTML content.
+
+3. REDISTRIBUTION AND MODIFICATIONS
+-----------------------------------
+
+Distributions of Hoplane, including modified versions, must preserve
+the original copyright notice, the complete LICENSE file and this
+NOTICE, as required by the LICENSE file.
+
+If you distribute a modified version, include a reasonably prominent
+notice identifying the modifier and the date or period of modification.
+Do not describe a modified or unofficial version as an official
+Kitgenix release or imply Kitgenix endorsement.
+
+4. THIRD-PARTY MATERIALS
+------------------------
+
+Hoplane may incorporate third-party packages, libraries, fonts, icons,
+assets or other materials. Those components remain subject to their
+respective licences and notice requirements. The Hoplane licence does
+not supersede those terms.
+
+This NOTICE is not a complete inventory of third-party components.
+Before distributing a release, the distributor must identify and retain
+any component-specific copyright, licence and attribution notices
+required by the applicable third-party licences.
+
+5. PROJECT AND TRADEMARK INFORMATION
+------------------------------------
+
+The names Kitgenix and Hoplane, associated logos and other brand
+identifiers are not licensed for endorsement or impersonation of the
+official project. Required attribution does not imply affiliation,
+sponsorship or endorsement.
+
+For project information and licensing enquiries:
+https://kitgenix.com
+
+For the original source repository and project updates:
+https://github.com/Kitgenix/hoplane
+
+Hoplane - Every link has a destination.
+Developed and maintained by Kitgenix.
