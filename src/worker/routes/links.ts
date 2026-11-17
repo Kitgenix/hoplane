@@ -6,16 +6,21 @@ import { requireScope } from '../auth';
 import { VERSION, config, type AppEnv } from '../env';
 import { badRequest, HttpError } from '../lib/errors';
 import { isValidSlug, normaliseSlug, slugify } from '../lib/slug';
-import { safeUrl } from '../lib/url';
+import { isPublicFetchTarget, safeUrl } from '../lib/url';
 import { toCsv } from '../services/analytics';
 import {
-  addTags, allTags, createLink, deleteLinks, getLinkRow, listLinks, parse, requireLink, setDisabled, statusOf, toLink, updateLink,
+  addTags, allTags, countLinks, createLink, getLinksByIds, deleteLinks, getLinkRow, listLinks, parse, requireLink, setDisabled, statusOf, toLink, updateLink,
   type LinkRow,
 } from '../services/links';
-import { audit } from '../services/settings';
+import { checkLink, saveHealth } from '../services/health';
+import { normaliseImport } from '../services/importer';
+import { emitLazily, linkEvent } from '../services/webhooks';
+import { audit, getSettings } from '../services/settings';
 
 const routes = new Hono<AppEnv>();
 const origin = (url: string) => new URL(url).origin;
+/** Request budget for one manual check: enough for a link with many rule and A/B destinations. */
+const MANUAL_CHECK_REQUESTS = 60;
 
 /** Avoid invalid SQL LIMIT/OFFSET values from untrusted query parameters. */
 function positiveIntQuery(value: string | undefined, fallback: number, max: number, name: string): number {
@@ -37,6 +42,7 @@ routes.get('/links', requireScope('links:read'), async (c) => {
       sort: q.sort as never,
       page: positiveIntQuery(q.page, 1, 100_000, 'page'),
       limit: positiveIntQuery(q.limit, 25, 200, 'limit'),
+      health: q.health === 'problems' ? 'problems' : undefined,
     },
     origin(c.req.url),
   );
@@ -45,6 +51,7 @@ routes.get('/links', requireScope('links:read'), async (c) => {
 
 routes.post('/links', requireScope('links:write'), async (c) => {
   const link = await createLink(c.env, await c.req.json().catch(() => null), c.get('principal'), origin(c.req.url));
+  c.executionCtx.waitUntil(emitLazily(c.env, 'link.created', () => [linkEvent.created(link)]));
   return c.json(link, 201);
 });
 
@@ -55,6 +62,11 @@ routes.get('/links/check', requireScope('links:read'), async (c) => {
   const row = await c.env.DB.prepare('SELECT id FROM links WHERE slug = ?').bind(slug).first();
   return c.json({ slug, available: !row, reason: row ? 'taken' : null });
 });
+
+// Registered before /links/:id so "count" is not read as a link id.
+routes.get('/links/count', requireScope('links:read'), async (c) =>
+  c.json(await countLinks(c.env.DB, { q: c.req.query('q') || undefined, tag: c.req.query('tag') || undefined })),
+);
 
 routes.get('/links/lookup', requireScope('links:read'), async (c) => {
   const row = await requireLink(c.env.DB, c.req.query('slug') || '');
@@ -67,14 +79,27 @@ routes.get('/links/:id', requireScope('links:read'), async (c) => {
   return c.json({ ...link, status: statusOf(link) });
 });
 
+/** Check this link's destinations now, whether or not daily checks are on. */
+routes.post('/links/:id/health', requireScope('links:write'), async (c) => {
+  const row = await requireLink(c.env.DB, c.req.param('id'));
+  const settings = await getSettings(c.env.DB);
+  const result = await checkLink(row, { remaining: MANUAL_CHECK_REQUESTS }, { safeBrowsing: settings.safe_browsing });
+  if (!result) throw new HttpError(422, 'This link has too many destinations to check at once');
+  await saveHealth(c.env.DB, row, result);
+  const link = toLink((await getLinkRow(c.env.DB, row.id))!, origin(c.req.url));
+  return c.json({ ...link, status: statusOf(link) });
+});
+
 routes.patch('/links/:id', requireScope('links:write'), async (c) => {
   const link = await updateLink(c.env, c.req.param('id'), await c.req.json().catch(() => null), c.get('principal'), origin(c.req.url));
+  c.executionCtx.waitUntil(emitLazily(c.env, 'link.updated', () => [linkEvent.updated(link)]));
   return c.json(link);
 });
 
 routes.delete('/links/:id', requireScope('links:write'), async (c) => {
-  const n = await deleteLinks(c.env, [c.req.param('id')], c.get('principal'));
-  if (!n) throw new HttpError(404, 'Link not found');
+  const removed = await deleteLinks(c.env, [c.req.param('id')], c.get('principal'));
+  if (!removed.length) throw new HttpError(404, 'Link not found');
+  c.executionCtx.waitUntil(emitLazily(c.env, 'link.deleted', () => removed.map(linkEvent.deleted)));
   return c.json({ ok: true });
 });
 
@@ -89,9 +114,16 @@ routes.post('/links/bulk', requireScope('links:write'), async (c) => {
   );
   const p = c.get('principal');
   let affected = 0;
-  if (body.action === 'delete') affected = await deleteLinks(c.env, body.ids, p);
-  else if (body.action === 'disable' || body.action === 'enable') affected = await setDisabled(c.env, body.ids, body.action === 'disable', p);
-  else affected = await addTags(c.env, body.ids, body.tags ?? [], p);
+  if (body.action === 'delete') {
+    const removed = await deleteLinks(c.env, body.ids, p);
+    affected = removed.length;
+    c.executionCtx.waitUntil(emitLazily(c.env, 'link.deleted', () => removed.map(linkEvent.deleted)));
+  } else {
+    if (body.action === 'disable' || body.action === 'enable') affected = await setDisabled(c.env, body.ids, body.action === 'disable', p);
+    else affected = await addTags(c.env, body.ids, body.tags ?? [], p);
+    const o = origin(c.req.url);
+    c.executionCtx.waitUntil(emitLazily(c.env, 'link.updated', async () => (await getLinksByIds(c.env.DB, body.ids, o)).map(linkEvent.updated)));
+  }
   return c.json({ ok: true, affected });
 });
 
@@ -99,26 +131,8 @@ routes.get('/tags', requireScope('links:read'), async (c) => c.json({ items: awa
 
 /* ------------------------------------------------------------------ page metadata */
 
-/**
- * Fetching a remote page is not equivalent to validating a redirect URL.
- * This conservative check requires an ordinary public DNS hostname.
- * It blocks IP literals, localhost/reserved names and nonstandard ports.
- * It does NOT replace provider-level egress controls or DNS/IP checks after resolution.
- */
-export function isSafeMetadataTarget(value: string, selfHost?: string): boolean {
-  const normalised = safeUrl(value);
-  if (!normalised) return false;
-  const u = new URL(normalised);
-  const host = u.hostname.toLowerCase().replace(/\.$/, '');
-  const ownHost = selfHost?.toLowerCase().replace(/\.$/, '');
-  if (!host.includes('.') || (ownHost && host === ownHost)) return false;
-  if (u.port && u.port !== '80' && u.port !== '443') return false;
-  // URL normalises legacy IPv4 forms (127.1, decimal/hex IPs) to dotted IPs.
-  // Disallow all IP literals, including public ones, for this metadata-only feature.
-  if (/^\[.*\]$/.test(host) || /^\d+(?:\.\d+){3}$/.test(host)) return false;
-  if (/(?:^|\.)(?:localhost|local|internal|lan|test|invalid|example|onion|arpa)$/.test(host)) return false;
-  return true;
-}
+/** Kept for existing imports; the guard now lives in lib/url.ts. */
+export const isSafeMetadataTarget = isPublicFetchTarget;
 
 const META_TIMEOUT_MS = 6_000;
 const META_MAX_BYTES = 256 * 1024;
@@ -229,37 +243,6 @@ routes.get('/meta', requireScope('links:write'), async (c) => {
 
 /* ------------------------------------------------------------------ import / export */
 
-/** Accepts Kitgenix exports plus common fields from other shorteners (Bitly, Shlink, YOURLS CSVs). */
-function normaliseImport(raw: Record<string, unknown>) {
-  const pick = (...keys: string[]) => {
-    for (const k of keys) if (raw[k] !== undefined && raw[k] !== null && raw[k] !== '') return raw[k];
-    return undefined;
-  };
-  const tags = pick('tags');
-  const toMs = (v: unknown) => {
-    if (v === undefined) return undefined;
-    if (typeof v === 'number') return v < 1e12 ? v * 1000 : v; // seconds → ms
-    if (typeof v === 'string' && /^\d+$/.test(v)) return toMs(Number(v));
-    return v;
-  };
-  const out: Record<string, unknown> = {
-    url: pick('url', 'long_url', 'longUrl', 'destination', 'target', 'original_url'),
-    slug: pick('slug', 'keyword', 'short_code', 'shortCode', 'custom_bitlink', 'back_half'),
-    title: pick('title', 'name'),
-    description: pick('description'),
-    image: pick('image'),
-    notes: pick('notes', 'comment', 'note'),
-    tags: Array.isArray(tags) ? tags.map(String) : typeof tags === 'string' ? tags.split(/[,;|]/).map((t) => t.trim()).filter(Boolean) : undefined,
-    password: pick('password'), // Optional explicit replacement password, never exported by Hoplane.
-    expires_at: toMs(pick('expires_at', 'expiration', 'expiresAt', 'validUntil')),
-  };
-  for (const k of ['redirect_code', 'forward_query', 'utm', 'rules', 'variants', 'warning', 'starts_at', 'expired_url', 'max_clicks', 'disabled'])
-    if (raw[k] !== undefined && raw[k] !== null && raw[k] !== '') out[k] = raw[k];
-  if (typeof out.slug === 'string') out.slug = out.slug.replace(/^https?:\/\/[^/]+\//, '');
-  for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
-  return out;
-}
-
 routes.post('/import', requireScope('links:write'), async (c) => {
   const body = parse(
     z.object({ links: z.array(z.record(z.string(), z.unknown())).min(1).max(1000), on_conflict: z.enum(['skip', 'overwrite']).default('skip') }),
@@ -268,28 +251,34 @@ routes.post('/import', requireScope('links:write'), async (c) => {
   const p = c.get('principal');
   const o = origin(c.req.url);
   const cfg = config(c.env);
-  const result = { created: 0, updated: 0, skipped: 0, errors: [] as { row: number; slug?: string; error: string }[] };
+  const result = {
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    errors: [] as { row: number; slug?: string; error: string }[],
+    warnings: [] as { row: number; slug?: string; warning: string }[],
+  };
   for (let i = 0; i < body.links.length; i++) {
-    const item = normaliseImport(body.links[i]);
+    const { input: item, passwordHash, passwordUnavailable, warnings } = normaliseImport(body.links[i]);
     try {
       const slug = typeof item.slug === 'string' ? normaliseSlug(item.slug, cfg.caseSensitive) : '';
       const existing = slug ? await getLinkRow(c.env.DB, slug) : null;
-      // Exports contain only a has_password flag, never the password or hash.
-      // Do not silently restore a protected link as a public link.
-      if (body.links[i].has_password === true && !item.password && !existing?.password_hash) {
-        throw badRequest('Protected links need a new password when imported; exported password hashes are not included');
-      }
+      // Never silently restore a protected link as a public link. Overwriting an
+      // existing protected link without a new password keeps its current password.
+      if (passwordUnavailable && !existing?.password_hash) throw badRequest(passwordUnavailable);
+      let link;
       if (existing) {
         if (body.on_conflict === 'skip') {
           result.skipped++;
           continue;
         }
-        await updateLink(c.env, existing.id, item, p, o);
+        link = await updateLink(c.env, existing.id, item, p, o, { passwordHash });
         result.updated++;
       } else {
-        await createLink(c.env, item, p, o, { skipAudit: true });
+        link = await createLink(c.env, item, p, o, { skipAudit: true, passwordHash });
         result.created++;
       }
+      for (const warning of warnings) result.warnings.push({ row: i + 1, slug: link.slug, warning });
     } catch (err) {
       result.errors.push({ row: i + 1, slug: typeof item.slug === 'string' ? item.slug : undefined, error: err instanceof Error ? err.message : 'Failed' });
     }

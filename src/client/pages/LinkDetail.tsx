@@ -7,9 +7,9 @@ import { LinkEditor } from '../components/LinkEditor';
 import { QrDialog, qrSvg } from '../components/QrDialog';
 import { Badge, Button, Card, CopyButton, Empty, HostAvatar, Skeleton, useConfirm, useToast } from '../components/ui';
 import { api } from '../lib/api';
-import { dateTime, hostOf } from '../lib/format';
+import { ago, dateTime, hostOf } from '../lib/format';
 import { useAsync, useSession } from '../lib/hooks';
-import { StatusBadge } from './Links';
+import { HealthBadge, StatusBadge } from './Links';
 
 export function LinkDetailPage({ id }: { id: string }) {
   const { can } = useSession();
@@ -18,6 +18,7 @@ export function LinkDetailPage({ id }: { id: string }) {
   const confirm = useConfirm();
   const [edit, setEdit] = useState(false);
   const [qr, setQr] = useState(false);
+  const [checking, setChecking] = useState(false);
   const { data: link, loading, error, reload, setData } = useAsync((signal) => api<Link & { status: LinkStatus }>(`/links/${encodeURIComponent(id)}`, { signal }), [id]);
 
   if (loading && !link) return <Skeleton className="h-40" />;
@@ -34,6 +35,17 @@ export function LinkDetailPage({ id }: { id: string }) {
     await api(`/links/${link.id}`, { method: 'DELETE' });
     toast('Link deleted', 'good');
     navigate('/links');
+  };
+
+  const checkNow = async () => {
+    setChecking(true);
+    try {
+      setData(await api<Link & { status: LinkStatus }>(`/links/${link.id}/health`, { method: 'POST' }));
+    } catch {
+      toast('Could not check this link', 'bad');
+    } finally {
+      setChecking(false);
+    }
   };
 
   const facts: [string, React.ReactNode][] = [
@@ -88,6 +100,26 @@ export function LinkDetailPage({ id }: { id: string }) {
                 </div>
               ))}
             </dl>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-xs text-muted">Destination check</span>
+              {link.health ? (
+                <>
+                  <HealthBadge health={link.health} />
+                  <span className="min-w-0 text-xs text-muted">
+                    {link.health.error ?? (link.health.http_status ? `HTTP ${link.health.http_status}` : '')}
+                    {link.health.error || link.health.http_status ? ' · ' : ''}
+                    {ago(link.health.checked_at)}
+                  </span>
+                </>
+              ) : (
+                <span className="text-xs text-muted">Not checked yet</span>
+              )}
+              {can('links:write') && (
+                <Button size="sm" loading={checking} onClick={checkNow}>
+                  Check now
+                </Button>
+              )}
+            </div>
             {link.notes && <p className="mt-3 rounded-lg bg-surface-2 px-3 py-2 text-sm text-muted">{link.notes}</p>}
           </div>
           <div className="flex shrink-0 gap-2">

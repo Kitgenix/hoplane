@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { InstanceInfo } from '../../shared/types';
+import { getCookie } from 'hono/cookie';
 import { authenticate, createSession, destroySession, protectAuthWrite, requireJson, requireRole } from '../auth';
+import { accessConfig, verifyAccessJwt } from '../lib/access';
 import { VERSION, config, type AppEnv, type Bindings } from '../env';
-import { hashPassword, sha256, timingSafeEqual, uuid, verifyPassword } from '../lib/crypto';
+import { hashPassword, randomToken, sha256, timingSafeEqual, uuid, verifyPassword } from '../lib/crypto';
 import { HttpError, badRequest } from '../lib/errors';
 import { rateLimit, resetRateLimit } from '../lib/ratelimit';
 import { dailySalt } from '../services/analytics';
@@ -31,6 +33,10 @@ routes.get('/instance', async (c) => {
     case_sensitive: cfg.caseSensitive,
     slug_length: cfg.slugLength,
     retention_days: cfg.retentionDays,
+    expired_link_retention_days: cfg.expiredLinkRetentionDays,
+    // Public by design: visiting any unknown short link reveals it anyway.
+    not_found_url: cfg.notFoundUrl || null,
+    access_login: !!accessConfig(c.env),
     cache: !!c.env.CACHE,
     backups: !!c.env.BACKUPS,
   };
@@ -86,6 +92,40 @@ routes.post('/auth/login', async (c) => {
   await c.env.DB.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').bind(Date.now(), user.id).run();
   await createSession(c, user.id);
   return c.json({ ok: true });
+});
+
+/**
+ * Cloudflare Access sign-in. Protect this path (and /dashboard) with an Access
+ * application; Access then authenticates the visitor and forwards a signed JWT.
+ * A top-level GET from the login page's "Continue with Cloudflare Access" link.
+ */
+routes.get('/auth/access', async (c) => {
+  const fail = (reason: string) => c.redirect(`/dashboard/login?access_error=${reason}`, 302);
+  const cfg = accessConfig(c.env);
+  if (!cfg) return fail('not_configured');
+  const token = c.req.header('cf-access-jwt-assertion') || getCookie(c, 'CF_Authorization');
+  if (!token) return fail('no_token');
+  const claims = await verifyAccessJwt(token, cfg);
+  if (!claims) return fail('invalid_token');
+
+  let user = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(claims.email).first<{ id: string }>();
+  if (!user) {
+    const role = config(c.env).accessAutoRole;
+    const users = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM users').first<{ n: number }>();
+    // The first account is always the owner, created with SETUP_TOKEN.
+    if (!role || !users?.n) return fail('no_account');
+    const id = uuid();
+    // No usable password: this person signs in through Access until an admin sets one.
+    await c.env.DB.prepare('INSERT INTO users (id, email, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(id, claims.email, '', await hashPassword(randomToken(32)), role, Date.now())
+      .run();
+    await audit(c.env.DB, null, 'user.create', claims.email, `${role} (Cloudflare Access)`);
+    user = { id };
+  }
+  await c.env.DB.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').bind(Date.now(), user.id).run();
+  await createSession(c, user.id, claims.exp * 1000);
+  await audit(c.env.DB, null, 'auth.access_login', claims.email);
+  return c.redirect('/dashboard', 302);
 });
 
 routes.post('/auth/logout', async (c) => {

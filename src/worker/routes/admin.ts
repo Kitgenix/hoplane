@@ -3,11 +3,12 @@ import { z } from 'zod';
 import type { ApiKey, Role, Scope, User } from '../../shared/types';
 import { ROLES, SCOPES } from '../../shared/types';
 import { atLeast, requireRole } from '../auth';
-import type { AppEnv } from '../env';
+import { config, type AppEnv } from '../env';
 import { hashPassword, randomToken, sha256, uuid } from '../lib/crypto';
-import { badRequest, conflict, forbidden, notFound } from '../lib/errors';
+import { HttpError, badRequest, conflict, forbidden, notFound } from '../lib/errors';
 import { parse } from '../services/links';
 import { audit, getSettings, saveSettings } from '../services/settings';
+import { checkForUpdate, getLatestRelease, updateStatus } from '../services/updates';
 import { emailField, passwordField } from './auth';
 
 const routes = new Hono<AppEnv>();
@@ -174,12 +175,30 @@ routes.put('/settings', requireRole('admin'), async (c) => {
         .optional(),
       warn_all: z.boolean().optional(),
       track_bots: z.boolean().optional(),
+      safe_browsing: z.boolean().optional(),
+      health_checks: z.boolean().optional(),
     }),
     await c.req.json().catch(() => null),
   );
   await saveSettings(c.env.DB, body);
   await audit(c.env.DB, c.get('principal'), 'settings.update', Object.keys(body).join(','));
   return c.json(await getSettings(c.env.DB, true));
+});
+
+/* ------------------------------------------------------------------ updates */
+
+routes.get('/updates', requireRole('admin'), async (c) =>
+  c.json(updateStatus(await getLatestRelease(c.env.DB), config(c.env).updateCheck)),
+);
+
+routes.post('/updates/check', requireRole('admin'), async (c) => {
+  if (!config(c.env).updateCheck) throw badRequest('Update checks are turned off (UPDATE_CHECK is "false")');
+  try {
+    return c.json(updateStatus(await checkForUpdate(c.env.DB), true));
+  } catch (err) {
+    console.warn('update check failed', err);
+    throw new HttpError(502, 'Could not reach GitHub to check for updates. Try again later.');
+  }
 });
 
 routes.get('/audit', requireRole('admin'), async (c) => {

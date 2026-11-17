@@ -58,6 +58,7 @@ interface Result {
   updated: number;
   skipped: number;
   errors: { row: number; slug?: string; error: string }[];
+  warnings: { row: number; slug?: string; warning: string }[];
 }
 
 export function ImportExportPage() {
@@ -85,7 +86,7 @@ export function ImportExportPage() {
 
   const run = async () => {
     if (!rows) return;
-    const total: Result = { created: 0, updated: 0, skipped: 0, errors: [] };
+    const total: Result = { created: 0, updated: 0, skipped: 0, errors: [], warnings: [] };
     const size = 200;
     for (let i = 0; i < rows.length; i += size) {
       setProgress(i / rows.length);
@@ -94,6 +95,7 @@ export function ImportExportPage() {
       total.updated += r.updated;
       total.skipped += r.skipped;
       total.errors.push(...r.errors.map((e) => ({ ...e, row: e.row + i })));
+      total.warnings.push(...(r.warnings ?? []).map((w) => ({ ...w, row: w.row + i })));
     }
     setProgress(null);
     setResult(total);
@@ -182,6 +184,7 @@ export function ImportExportPage() {
                     <Badge tone="brand">{result.updated} updated</Badge>
                     <Badge>{result.skipped} skipped</Badge>
                     {result.errors.length > 0 && <Badge tone="bad">{result.errors.length} failed</Badge>}
+                    {result.warnings.length > 0 && <Badge tone="warn">{result.warnings.length} notes</Badge>}
                   </div>
                   {result.errors.length > 0 && (
                     <ul className="mt-3 max-h-48 space-y-1 overflow-y-auto text-xs">
@@ -189,6 +192,16 @@ export function ImportExportPage() {
                         <li key={e.row} className="text-muted">
                           Row {e.row}
                           {e.slug ? ` (${e.slug})` : ''}: <span className="text-bad-fg">{e.error}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {result.warnings.length > 0 && (
+                    <ul className="mt-3 max-h-48 space-y-1 overflow-y-auto text-xs">
+                      {result.warnings.map((w, idx) => (
+                        <li key={idx} className="text-muted">
+                          Row {w.row}
+                          {w.slug ? ` (${w.slug})` : ''}: <span className="text-warn-fg">{w.warning}</span>
                         </li>
                       ))}
                     </ul>
@@ -201,6 +214,9 @@ export function ImportExportPage() {
                 <p className="mt-2">
                   <code className="font-mono text-text">url</code> (required; also <code>long_url</code>, <code>destination</code>), <code className="font-mono text-text">slug</code> (also <code>keyword</code>, <code>short_code</code>, <code>back_half</code>),{' '}
                   <code>title</code>, <code>description</code>, <code>tags</code> (comma-separated), <code>notes</code> / <code>comment</code>, <code>expires_at</code> / <code>expiration</code>, plus every field from a Hoplane JSON export.
+                </p>
+                <p className="mt-2">
+                  Sink JSON exports keep their country and app-store routing, warning pages, query forwarding, and passwords. Cloaking and reverse-proxy settings are not supported, so those links redirect normally.
                 </p>
               </details>
             </div>

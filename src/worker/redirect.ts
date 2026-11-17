@@ -3,12 +3,14 @@
  * https://kitgenix.com · https://github.com/Kitgenix/hoplane
  *
  * Resolve a slug, enforce eligibility and password protection, select a
- * destination, reserve a permitted click atomically, then record analytics.
+ * destination, then record analytics. Only links with a click limit wait for
+ * an atomic D1 reservation; other links record the click in the background.
  */
 import type { RoutingRule, Utm, Variant } from '../shared/types';
 import { config, type Bindings } from './env';
 import { sha256, verifyPassword } from './lib/crypto';
 import { baseHeaders, messagePage, passwordPage, previewPage, warningPage } from './lib/html';
+import { messages, negotiateLocale } from './lib/i18n';
 import { rateLimit } from './lib/ratelimit';
 import { isValidSlug, normaliseSlug } from './lib/slug';
 import { buildDestination, safeUrl } from './lib/url';
@@ -16,6 +18,7 @@ import { isSocialCrawler, visitorFrom, type VisitorContext } from './lib/visitor
 import { dailySalt, recordClick } from './services/analytics';
 import { cacheKey, statusOf, type LinkRow } from './services/links';
 import { getSettings } from './services/settings';
+import { emitLazily, makeEvent } from './services/webhooks';
 
 const CACHE_TTL = 3600;
 type WaitUntil = { waitUntil(promise: Promise<unknown>): void };
@@ -95,13 +98,27 @@ export async function handleRedirect(request: Request, env: Bindings, ctx: WaitU
     decoded = decodeURIComponent(rawSlug);
   } catch {}
   const slug = normaliseSlug(decoded, cfg.caseSensitive);
-  const notFound = () => messagePage(cfg.siteName, 404, 'Link not found', 'This short link does not exist. Check the address and try again.', { href: '/', label: 'Go to homepage' });
+  const url = new URL(request.url);
+  const lang = negotiateLocale(request.headers.get('accept-language'));
+  const t = messages(lang);
+  const notice = (status: number, n: { title: string; message: string }, home = false) =>
+    messagePage(cfg.siteName, status, n.title, n.message, home ? { href: '/', label: t.goHome } : undefined, lang);
+  const notFound = () => {
+    // Uncached 302 so creating the link later takes effect at once. Skip the
+    // redirect if it points back at this same path, which would loop.
+    if (cfg.notFoundUrl) {
+      const target = new URL(cfg.notFoundUrl);
+      if (target.origin !== url.origin || target.pathname !== url.pathname) {
+        return new Response(null, { status: 302, headers: baseHeaders({ Location: cfg.notFoundUrl, 'Cache-Control': 'no-store' }) });
+      }
+    }
+    return notice(404, t.notFound, true);
+  };
   if (!isValidSlug(slug)) return notFound();
 
   const link = await loadLink(env, slug, ctx);
   if (!link) return notFound();
 
-  const url = new URL(request.url);
   const unavailable = (row: LinkRow): Response | null => {
     const status = statusOf({
       disabled: !!row.disabled,
@@ -110,12 +127,12 @@ export async function handleRedirect(request: Request, env: Bindings, ctx: WaitU
       max_clicks: row.max_clicks,
       clicks: row.clicks,
     });
-    if (status === 'disabled') return messagePage(cfg.siteName, 410, 'Link unavailable', 'This link has been turned off by its owner.');
-    if (status === 'scheduled') return messagePage(cfg.siteName, 404, 'Not live yet', 'This link is scheduled and is not active yet. Please check back later.');
+    if (status === 'disabled') return notice(410, t.disabled);
+    if (status === 'scheduled') return notice(404, t.scheduled);
     if (status === 'expired' || status === 'limit') {
       const fallback = safeUrl(row.expired_url);
       if (fallback) return new Response(null, { status: 302, headers: baseHeaders({ Location: fallback, 'Cache-Control': 'no-store' }) });
-      return messagePage(cfg.siteName, 410, 'Link expired', 'This short link is no longer active.');
+      return notice(410, t.expired);
     }
     return null;
   };
@@ -126,19 +143,25 @@ export async function handleRedirect(request: Request, env: Bindings, ctx: WaitU
 
   // Password protection: password POSTs are later redirected with HTTP 303,
   // never with 307/308 (which could forward the submitted password).
+  // API and command-line clients can send the password in an X-Link-Password
+  // header instead of the form; they get plain-text errors rather than HTML.
   if (link.password_hash) {
-    if (request.method !== 'POST') return passwordPage(cfg.siteName, link.slug);
+    const headerPassword = request.headers.get('x-link-password');
+    const plain = (status: number, message: string) => new Response(message, { status, headers: baseHeaders({ 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }) });
+    if (headerPassword === null && request.method !== 'POST') return passwordPage(cfg.siteName, link.slug, undefined, 200, lang);
     // Salt the rate-limit key so a stored hash of a low-entropy IPv4 address
     // cannot be enumerated offline. Use the existing per-day random salt.
+    // Header and form attempts share one limit.
     const salt = await dailySalt(env.DB);
     const ipKey = (await sha256(`${salt}|password:${link.id}|${visitor.ip || 'unknown'}`)).slice(0, 32);
     if (!(await rateLimit(env.DB, `pw:${link.id}:${ipKey}`, 10, 10 * 60_000))) {
-      return passwordPage(cfg.siteName, link.slug, 'Too many attempts. Please wait a few minutes and try again.', 429);
+      return headerPassword !== null
+        ? plain(429, 'Too many attempts. Please wait a few minutes and try again.')
+        : passwordPage(cfg.siteName, link.slug, t.password.tooMany, 429, lang);
     }
-    const form = await request.formData().catch(() => null);
-    const pw = form?.get('password');
+    const pw = headerPassword ?? (await request.formData().catch(() => null))?.get('password');
     if (typeof pw !== 'string' || !(await verifyPassword(pw, link.password_hash))) {
-      return passwordPage(cfg.siteName, link.slug, 'That password is not correct.', 401);
+      return headerPassword !== null ? plain(401, 'Incorrect password') : passwordPage(cfg.siteName, link.slug, t.password.wrong, 401, lang);
     }
   } else if (request.method !== 'GET' && request.method !== 'HEAD') {
     return new Response('Method not allowed', { status: 405, headers: baseHeaders({ Allow: 'GET, HEAD' }) });
@@ -155,7 +178,7 @@ export async function handleRedirect(request: Request, env: Bindings, ctx: WaitU
     if (variant !== null) target = variants[variant].url;
   }
   const safeTarget = safeUrl(target);
-  if (!safeTarget) return messagePage(cfg.siteName, 422, 'Invalid destination', 'This link points to an address that cannot be opened.');
+  if (!safeTarget) return notice(422, t.invalidDestination);
   const destination = buildDestination(safeTarget, {
     utm: parse<Utm>(link.utm, {}),
     forwardFrom: link.forward_query ? url.searchParams : null,
@@ -169,18 +192,27 @@ export async function handleRedirect(request: Request, env: Bindings, ctx: WaitU
       image: link.image,
       url: destination,
       canonical: `${url.origin}/${link.slug}`,
-    });
+    }, lang);
   }
 
   const settings = await getSettings(env.DB);
   const shouldRecordAnalytics = request.method !== 'HEAD' && (!visitor.bot || settings.track_bots);
+  const click = { source: url.searchParams.has('qr') ? ('qr' as const) : ('link' as const), variant, destination };
   // User-Agent is caller-controlled. Excluding bots from analytics MUST NOT let
   // an attacker bypass max_clicks by sending a bot User-Agent. For capped links,
   // every successful non-HEAD request reserves an accepted redirect, including
   // requests classified as bots. Excluded bots are not written to click analytics.
-  const shouldReserve = request.method !== 'HEAD' && (shouldRecordAnalytics || link.max_clicks !== null);
+  const capped = link.max_clicks !== null;
 
-  if (shouldReserve) {
+  if (!capped) {
+    // Nothing is enforced by the counter of an uncapped link, so the redirect does
+    // not wait for a write to the D1 primary (a cross-region round trip for distant
+    // visitors). The click row and the counter are written together in the
+    // background. Eligibility was checked against fresh D1 state in loadLink.
+    if (shouldRecordAnalytics) {
+      ctx.waitUntil(recordClick(env.DB, link.id, visitor, click).catch((err) => console.error('click recording failed', err)));
+    }
+  } else if (request.method !== 'HEAD') {
     // A single conditional D1 UPDATE both reserves the click and enforces
     // the limit atomically across Worker isolates. updated_at also detects
     // concurrent changes to the link's security settings or destination.
@@ -202,22 +234,42 @@ export async function handleRedirect(request: Request, env: Bindings, ctx: WaitU
       if (!latest || latest.slug !== slug) return notFound();
       const blocked = unavailable(latest);
       if (blocked) return blocked;
-      return messagePage(cfg.siteName, 409, 'Link changed', 'This short link was updated. Please try again.');
+      return notice(409, t.linkChanged);
     }
 
     // Analytics are best-effort asynchronous; the accepted request was already
     // counted in D1. Keep excluded bots out of detailed analytics even though
     // their redirects consume a capped link's allowance.
     if (shouldRecordAnalytics) {
-      ctx.waitUntil(recordClick(env.DB, link.id, visitor, {
-        source: url.searchParams.has('qr') ? 'qr' : 'link',
-        variant,
-        destination,
-      }, { counterReserved: true }).catch((err) => console.error('click recording failed', err)));
+      ctx.waitUntil(recordClick(env.DB, link.id, visitor, click, { counterReserved: true }).catch((err) => console.error('click recording failed', err)));
     }
   }
 
-  if (link.warning || settings.warn_all) return warningPage(cfg.siteName, destination);
+  if (shouldRecordAnalytics) {
+    // Only coarse, non-identifying attributes: no IP, user agent, coordinates or visitor hash.
+    ctx.waitUntil(
+      emitLazily(env, 'link.clicked', () => [
+        makeEvent('link.clicked', {
+          link: { id: link.id, slug: link.slug },
+          click: {
+            source: click.source,
+            variant,
+            country: visitor.country,
+            region: visitor.region,
+            city: visitor.city,
+            continent: visitor.continent,
+            device: visitor.device,
+            os: visitor.os,
+            browser: visitor.browser,
+            language: visitor.language,
+            referrer: visitor.referrer,
+          },
+        }),
+      ]),
+    );
+  }
+
+  if (link.warning || settings.warn_all) return warningPage(cfg.siteName, destination, lang);
 
   const code = request.method === 'POST' ? 303 : [301, 302, 307, 308].includes(link.redirect_code) ? link.redirect_code : 302;
   return new Response(null, {
@@ -226,7 +278,9 @@ export async function handleRedirect(request: Request, env: Bindings, ctx: WaitU
       Location: destination,
       // Permanent redirects may be browser-cached and cannot be revoked
       // immediately by changing a link. Temporary redirects are uncached.
-      'Cache-Control': code === 301 || code === 308 ? 'public, max-age=300' : 'private, no-store',
+      // A protected link's destination must never land in a shared cache,
+      // where a request without the password could be served it.
+      'Cache-Control': (code === 301 || code === 308) && !link.password_hash ? 'public, max-age=300' : 'private, no-store',
     }),
   });
 }

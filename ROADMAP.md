@@ -158,7 +158,7 @@ Features are grouped by functionality rather than assigned to fixed release date
 
 ### Authentication and Collaboration
 
--   [ ] **Cloudflare Access SSO:** Support Cloudflare Access identities and map authenticated users to Hoplane accounts.
+-   [x] **Cloudflare Access SSO:** Support Cloudflare Access identities and map authenticated users to Hoplane accounts.
 
 -   [ ] **Folders and Workspaces:** Introduce improved link organisation and collaboration tools for larger teams.
 
@@ -174,11 +174,11 @@ Features are grouped by functionality rather than assigned to fixed release date
 
 ### Automation and Integrations
 
--   [ ] **Webhooks:** Trigger configurable events when links are clicked, created, updated, or deleted.
+-   [x] **Webhooks:** Trigger configurable events when links are clicked, created, updated, or deleted.
 
--   [ ] **Link Health Monitoring:** Periodically check destination URLs and identify unavailable or problematic links.
+-   [x] **Link Health Monitoring:** Periodically check destination URLs and identify unavailable or problematic links.
 
--   [ ] **OpenAPI Specification:** Publish a formal API specification with generated reference documentation.
+-   [x] **OpenAPI Specification:** Publish a formal API specification with generated reference documentation.
 
 ### Artificial Intelligence
 
@@ -187,6 +187,8 @@ Features are grouped by functionality rather than assigned to fixed release date
 -   [ ] **Optional AI Configuration:** Keep AI functionality opt-in and avoid making it a requirement for core deployment.
 
 ### Accessibility and Internationalisation
+
+-   [x] **Visitor Page Translations:** Link error, password and warning pages in ten languages, chosen from the visitor's browser language.
 
 -   [ ] **Dashboard Translations:** Introduce internationalisation (i18n) support for multiple languages.
 

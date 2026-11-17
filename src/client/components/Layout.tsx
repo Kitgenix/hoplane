@@ -1,9 +1,10 @@
-import { BarChart3, Link2, LogOut, Menu, Monitor, Moon, Settings, Sun, Upload, X } from 'lucide-react';
+import { ArrowUpCircle, BarChart3, Link2, LogOut, Menu, Monitor, Moon, Settings, Sun, Upload, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 import { KITGENIX } from '../../shared/attribution';
+import type { UpdateStatus } from '../../shared/types';
 import { api } from '../lib/api';
-import { useLocalStorage, useSession } from '../lib/hooks';
+import { useAsync, useLocalStorage, useSession } from '../lib/hooks';
 import { Attribution, GithubMark, Logo } from './Attribution';
 import { IconButton, cx } from './ui';
 
@@ -34,6 +35,33 @@ function ThemeToggle() {
     <IconButton label={`Theme: ${theme}`} onClick={() => setTheme(next[theme])}>
       <Icon className="size-4" />
     </IconButton>
+  );
+}
+
+/** Tells owners and admins when a newer Hoplane release exists. Forks and deployments never update themselves. */
+function UpdateBanner() {
+  const { isAdmin } = useSession();
+  const { data } = useAsync((signal) => (isAdmin ? api<UpdateStatus>('/updates', { signal }) : Promise.resolve(null)), [isAdmin]);
+  const [dismissed, setDismissed] = useLocalStorage<string>('hpl-update-dismissed', '');
+  if (!data?.update_available || !data.latest || dismissed === data.latest) return null;
+  return (
+    <div role="status" className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-brand/30 bg-brand-soft px-4 py-3 text-sm">
+      <ArrowUpCircle className="size-4 shrink-0 text-brand-fg" />
+      <span className="min-w-0 flex-1">
+        <strong className="font-semibold">{KITGENIX.product} {data.latest}</strong> is available. This instance is running {data.current}.
+      </span>
+      {data.url && (
+        <a href={data.url} target="_blank" rel="noopener noreferrer" className="font-medium text-brand-fg hover:underline">
+          Release notes
+        </a>
+      )}
+      <a href={`${KITGENIX.repository}#updating-and-maintaining-your-deployment`} target="_blank" rel="noopener noreferrer" className="font-medium text-brand-fg hover:underline">
+        How to update
+      </a>
+      <IconButton label="Dismiss until the next release" onClick={() => setDismissed(data.latest!)}>
+        <X className="size-4" />
+      </IconButton>
+    </div>
   );
 }
 
@@ -129,7 +157,10 @@ export function Layout({ children }: { children: ReactNode }) {
         <Logo name={instance.site_name} className="text-sm" />
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <UpdateBanner />
+        {children}
+      </main>
       <Attribution className="mx-auto max-w-7xl justify-center px-4 pb-8 sm:px-6 lg:px-8" />
     </div>
   );

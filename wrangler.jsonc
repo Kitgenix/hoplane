@@ -61,8 +61,37 @@
     "HOME_URL": "",
     "SLUG_LENGTH": "6",
     "CASE_SENSITIVE": "false",
-    "RETENTION_DAYS": "365"
+    "RETENTION_DAYS": "365",
+    // Full http(s) URL that unknown short links redirect to (302). Empty shows a 404 page.
+    "NOT_FOUND_URL": "",
+    // Delete links this many days after they expire. Links with a fallback URL are kept.
+    // Empty disables cleanup; deleted links lose their analytics too.
+    "EXPIRED_LINK_RETENTION_DAYS": "",
+    // Once a day, ask GitHub for the latest Hoplane release so admins see an
+    // "update available" banner. Set to "false" to turn this off.
+    "UPDATE_CHECK": "true",
+    // Outbound requests the daily link health check may make (when turned on
+    // in Settings → Security). Workers Free allows 50 subrequests per run; on a
+    // paid plan you can raise this to check more links each day.
+    "HEALTH_CHECK_REQUESTS": "30",
+    // Cloudflare Access sign-in (optional). Set both to show "Continue with
+    // Cloudflare Access" on the login page. The team domain looks like
+    // "yourteam.cloudflareaccess.com"; the AUD tag is on the Access application.
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
+    // Role for Access users who have no Hoplane account yet: "viewer" or
+    // "editor". Empty: only people an admin has added can sign in.
+    "ACCESS_AUTO_ROLE": ""
   }
+
+  // Optional webhook retries. Without this queue, each webhook delivery is
+  // attempted once. With it, failed deliveries are retried with backoff
+  // (30 s, 2 min, 8 min, 32 min, ~2 h, then every 6 h) up to max_retries.
+  // Create the queue first: npx wrangler queues create hoplane-webhooks
+  // "queues": {
+  //   "producers": [{ "binding": "WEBHOOK_QUEUE", "queue": "hoplane-webhooks" }],
+  //   "consumers": [{ "queue": "hoplane-webhooks", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 8 }]
+  // },
 
   // Optional link-only nightly backups. Enable R2 in your Cloudflare account,
   // uncomment this binding, and verify the bucket exists after deployment.

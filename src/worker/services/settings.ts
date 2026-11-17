@@ -6,15 +6,19 @@ export interface Settings {
   warn_all: boolean;
   /** Record clicks from bots/crawlers in analytics (off by default). */
   track_bots: boolean;
+  /** Reject new or edited links whose destination Cloudflare's security DNS blocks (malware, phishing). */
+  safe_browsing: boolean;
+  /** Daily destination checks (services/health.ts). */
+  health_checks: boolean;
 }
 
-const DEFAULTS: Settings = { blocked_domains: [], warn_all: false, track_bots: false };
+const DEFAULTS: Settings = { blocked_domains: [], warn_all: false, track_bots: false, safe_browsing: false, health_checks: false };
 let cached: { at: number; value: Settings } | null = null;
 const TTL = 30_000;
 
 export async function getSettings(db: D1Database, fresh = false): Promise<Settings> {
   if (!fresh && cached && Date.now() - cached.at < TTL) return cached.value;
-  const { results } = await db.prepare("SELECT key, value FROM settings WHERE key IN ('blocked_domains','warn_all','track_bots')").all<{ key: string; value: string }>();
+  const { results } = await db.prepare("SELECT key, value FROM settings WHERE key IN ('blocked_domains','warn_all','track_bots','safe_browsing','health_checks')").all<{ key: string; value: string }>();
   const value: Settings = { ...DEFAULTS };
   for (const r of results) {
     try {

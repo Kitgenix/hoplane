@@ -9,7 +9,8 @@ import { KITGENIX } from '../../shared/attribution';
 import { VERSION, type AppEnv, type Bindings, type Principal } from '../env';
 import { HttpError } from '../lib/errors';
 import { breakdown, summary } from '../services/analytics';
-import { allTags, createLink, deleteLinks, listLinks, requireLink, statusOf, toLink, updateLink } from '../services/links';
+import { allTags, countLinks, createLink, deleteLinks, listLinks, requireLink, statusOf, toLink, updateLink, upsertLink } from '../services/links';
+import { emitLazily, linkEvent } from '../services/webhooks';
 
 const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 
@@ -40,7 +41,8 @@ interface Tool {
   scope: Scope;
   readOnly: boolean;
   inputSchema: Record<string, unknown>;
-  run(env: Bindings, args: Record<string, unknown>, p: Principal, origin: string): Promise<unknown>;
+  /** `defer` runs work after the response (webhook events). */
+  run(env: Bindings, args: Record<string, unknown>, p: Principal, origin: string, defer: (work: Promise<unknown>) => void): Promise<unknown>;
 }
 
 const DAY = 86_400_000;
@@ -49,7 +51,7 @@ const TOOLS: Tool[] = [
   {
     name: 'list_links',
     title: 'List links',
-    description: 'Search and list short links. Returns 25 per page by default.',
+    description: 'Search and list short links. Use `query` to search by slug, destination, title or notes. Returns 25 per page by default.',
     scope: 'links:read',
     readOnly: true,
     inputSchema: {
@@ -59,13 +61,14 @@ const TOOLS: Tool[] = [
         tag: str('Only links with this tag'),
         status: { type: 'string', enum: ['all', 'active', 'disabled', 'expired', 'scheduled', 'limit'] },
         sort: { type: 'string', enum: ['created_desc', 'created_asc', 'clicks_desc', 'slug_asc', 'recent_click'] },
+        health: { type: 'string', enum: ['problems'], description: 'Only links whose latest destination check found a problem (broken, unreachable, flagged or warning)' },
         page: { type: 'integer', minimum: 1 },
         limit: { type: 'integer', minimum: 1, maximum: 100 },
       },
     },
     run: async (env, a, _p, origin) => {
-      const r = await listLinks(env.DB, { q: a.query as string, tag: a.tag as string, status: a.status as never, sort: a.sort as never, page: Number(a.page) || 1, limit: Number(a.limit) || 25 }, origin);
-      return { ...r, items: r.items.map((l) => ({ slug: l.slug, short_url: l.short_url, url: l.url, title: l.title, tags: l.tags, clicks: l.clicks, status: statusOf(l), id: l.id })) };
+      const r = await listLinks(env.DB, { q: a.query as string, tag: a.tag as string, status: a.status as never, sort: a.sort as never, page: Number(a.page) || 1, limit: Number(a.limit) || 25, health: a.health === 'problems' ? 'problems' : undefined }, origin);
+      return { ...r, items: r.items.map((l) => ({ slug: l.slug, short_url: l.short_url, url: l.url, title: l.title, tags: l.tags, clicks: l.clicks, status: statusOf(l), health: l.health?.status ?? null, id: l.id })) };
     },
   },
   {
@@ -87,7 +90,11 @@ const TOOLS: Tool[] = [
     scope: 'links:write',
     readOnly: false,
     inputSchema: { type: 'object', properties: linkFields, required: ['url'] },
-    run: (env, a, p, origin) => createLink(env, a, p, origin),
+    run: async (env, a, p, origin, defer) => {
+      const link = await createLink(env, a, p, origin);
+      defer(emitLazily(env, 'link.created', () => [linkEvent.created(link)]));
+      return link;
+    },
   },
   {
     name: 'update_link',
@@ -96,9 +103,11 @@ const TOOLS: Tool[] = [
     scope: 'links:write',
     readOnly: false,
     inputSchema: { type: 'object', properties: { link: str('Slug or id of the link to change'), ...linkFields }, required: ['link'] },
-    run: async (env, a, p, origin) => {
-      const { link, ...patch } = a;
-      return updateLink(env, String(link), patch, p, origin);
+    run: async (env, a, p, origin, defer) => {
+      const { link: id, ...patch } = a;
+      const link = await updateLink(env, String(id), patch, p, origin);
+      defer(emitLazily(env, 'link.updated', () => [linkEvent.updated(link)]));
+      return link;
     },
   },
   {
@@ -108,7 +117,39 @@ const TOOLS: Tool[] = [
     scope: 'links:write',
     readOnly: false,
     inputSchema: { type: 'object', properties: { link: str('Slug or id') }, required: ['link'] },
-    run: async (env, a, p) => ({ deleted: await deleteLinks(env, [String(a.link)], p) }),
+    run: async (env, a, p, _origin, defer) => {
+      const removed = await deleteLinks(env, [String(a.link)], p);
+      defer(emitLazily(env, 'link.deleted', () => removed.map(linkEvent.deleted)));
+      return { deleted: removed.length };
+    },
+  },
+  {
+    name: 'count_links',
+    title: 'Count links',
+    description: 'Count links by status (active, scheduled, expired, limit reached, disabled), optionally filtered by search text or tag. Cheaper than listing when only numbers are needed.',
+    scope: 'links:read',
+    readOnly: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: str('Only links whose slug, destination, title or notes contain this text'),
+        tag: str('Only links with this tag'),
+      },
+    },
+    run: (env, a) => countLinks(env.DB, { q: a.query as string, tag: a.tag as string }),
+  },
+  {
+    name: 'upsert_link',
+    title: 'Create or update link',
+    description: 'Create a link with this slug, or update it if the slug already exists. Only the fields you pass are changed on an existing link. Returns whether it was created or updated.',
+    scope: 'links:write',
+    readOnly: false,
+    inputSchema: { type: 'object', properties: linkFields, required: ['slug', 'url'] },
+    run: async (env, a, p, origin, defer) => {
+      const result = await upsertLink(env, a, p, origin);
+      defer(emitLazily(env, `link.${result.action}`, () => [linkEvent[result.action](result.link)]));
+      return result;
+    },
   },
   {
     name: 'list_tags',
@@ -158,7 +199,7 @@ interface RpcRequest {
 const ok = (id: RpcRequest['id'], result: unknown) => ({ jsonrpc: '2.0', id: id ?? null, result });
 const fail = (id: RpcRequest['id'], code: number, message: string) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
 
-async function handle(msg: RpcRequest, env: Bindings, p: Principal, origin: string) {
+async function handle(msg: RpcRequest, env: Bindings, p: Principal, origin: string, defer: (work: Promise<unknown>) => void) {
   switch (msg.method) {
     case 'initialize': {
       const requested = String(msg.params?.protocolVersion ?? '');
@@ -186,7 +227,7 @@ async function handle(msg: RpcRequest, env: Bindings, p: Principal, origin: stri
       if (!tool) return fail(msg.id, -32602, `Unknown tool: ${String(msg.params?.name)}`);
       if (!p.scopes.includes(tool.scope)) return ok(msg.id, { isError: true, content: [{ type: 'text', text: `Permission "${tool.scope}" is required` }] });
       try {
-        const result = await tool.run(env, (msg.params?.arguments as Record<string, unknown>) ?? {}, p, origin);
+        const result = await tool.run(env, (msg.params?.arguments as Record<string, unknown>) ?? {}, p, origin, defer);
         return ok(msg.id, { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], structuredContent: result });
       } catch (err) {
         return ok(msg.id, { isError: true, content: [{ type: 'text', text: err instanceof Error ? err.message : 'Tool failed' }] });
@@ -216,7 +257,7 @@ routes.post('/mcp', async (c) => {
       continue;
     }
     if (m.id === undefined) continue; // notification
-    responses.push(await handle(m, c.env, p, origin));
+    responses.push(await handle(m, c.env, p, origin, (work) => c.executionCtx.waitUntil(work)));
   }
   if (!responses.length) return c.body(null, 202);
   return c.json(Array.isArray(body) ? responses : responses[0]);

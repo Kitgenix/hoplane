@@ -1,7 +1,7 @@
 import { BarChart3, ChevronLeft, ChevronRight, Link2, Lock, MoreHorizontal, Pencil, Plus, Power, QrCode, Route, Search, Shuffle, Tag, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link as RouterLink, useLocation, useSearch } from 'wouter';
-import type { Link, LinkStatus } from '../../shared/types';
+import type { HealthStatus, Link, LinkHealth, LinkStatus } from '../../shared/types';
 import { PageHeader } from '../components/Layout';
 import { LinkEditor } from '../components/LinkEditor';
 import { QrDialog } from '../components/QrDialog';
@@ -23,6 +23,28 @@ const STATUS: Record<LinkStatus, { label: string; tone: 'good' | 'bad' | 'warn' 
 export function StatusBadge({ status }: { status: LinkStatus }) {
   return <Badge tone={STATUS[status].tone}>{STATUS[status].label}</Badge>;
 }
+
+const HEALTH: Record<HealthStatus, { label: string; tone: 'good' | 'bad' | 'warn' | 'neutral' }> = {
+  ok: { label: 'Reachable', tone: 'good' },
+  skipped: { label: 'Not checkable', tone: 'neutral' },
+  warning: { label: 'Check warning', tone: 'warn' },
+  unreachable: { label: 'Unreachable', tone: 'bad' },
+  broken: { label: 'Broken', tone: 'bad' },
+  flagged: { label: 'Unsafe', tone: 'bad' },
+};
+
+/** Result of the latest destination check. The tooltip carries the detail. */
+export function HealthBadge({ health }: { health: LinkHealth }) {
+  const h = HEALTH[health.status];
+  const detail = [health.error, health.target].filter(Boolean).join(' · ');
+  return (
+    <span title={detail || undefined}>
+      <Badge tone={h.tone}>{h.label}</Badge>
+    </span>
+  );
+}
+
+const needsAttention = (h: LinkHealth | null) => !!h && h.status !== 'ok' && h.status !== 'skipped';
 
 export function LinkFeatures({ link }: { link: Link }) {
   const items = [
@@ -94,7 +116,11 @@ export function LinksPage() {
 
   useEffect(() => setPage(1), [dq, tag, status, sort]);
   const { data, loading, reload } = useAsync(
-    (signal) => api<{ items: Row[]; total: number; page: number; limit: number }>('/links', { query: { q: dq, tag, status, sort, page, limit: 25 }, signal }),
+    (signal) =>
+      api<{ items: Row[]; total: number; page: number; limit: number }>('/links', {
+        query: { q: dq, tag, sort, page, limit: 25, ...(status === 'attention' ? { status: 'all', health: 'problems' } : { status }) },
+        signal,
+      }),
     [dq, tag, status, sort, page],
   );
   const tags = useAsync((signal) => api<{ items: { tag: string; count: number }[] }>('/tags', { signal }), [data?.total]);
@@ -162,6 +188,7 @@ export function LinksPage() {
               <option value="scheduled">Scheduled</option>
               <option value="expired">Expired</option>
               <option value="limit">Limit reached</option>
+              <option value="attention">Needs attention</option>
             </Select>
             <Select value={tag} onChange={(e) => setTag(e.target.value)} aria-label="Tag" className="md:w-36">
               <option value="">All tags</option>
@@ -239,8 +266,9 @@ export function LinksPage() {
                   <span className="block font-semibold tabular">{short(l.clicks)}</span>
                   <span className="block text-xs text-muted">{l.last_clicked_at ? ago(l.last_clicked_at) : 'No clicks'}</span>
                 </span>
-                <span className="hidden w-28 md:block">
+                <span className="hidden w-28 flex-col items-start gap-1 md:flex">
                   <StatusBadge status={l.status} />
+                  {needsAttention(l.health) && <HealthBadge health={l.health!} />}
                 </span>
                 <span className="flex w-auto items-center justify-end gap-0.5 md:w-32">
                   <CopyButton text={l.short_url ?? `${window.location.origin}/${l.slug}`} label="Copy short link" />

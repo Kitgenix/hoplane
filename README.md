@@ -43,6 +43,7 @@ Hoplane is designed for individuals, developers, organisations, and teams that w
 - [Local development](#local-development)
 - [API reference](#api-reference)
 - [MCP integration](#mcp-integration)
+- [Webhooks](#webhooks)
 - [Limits and operational notes](#limits-and-operational-notes)
 - [Uninstalling](#uninstalling)
 - [Security, licence, and attribution](#security-licence-and-attribution)
@@ -58,8 +59,9 @@ Hoplane is designed for individuals, developers, organisations, and teams that w
 - HTTP `301`, `302`, `307`, and `308` redirects, with optional query-string forwarding.
 - UTM campaign builder that preserves parameters already present in the destination.
 - Scheduled activation, expiry, fallback destinations, and click limits.
-- Password-protected links with rate limiting against guessing.
+- Password-protected links with rate limiting against guessing. Command-line and API clients can send the password in an `X-Link-Password` header.
 - Optional redirect warning pages on individual links or the whole instance.
+- Visitor pages (link errors, password form, warning page) in English, German, Spanish, French, Italian, Dutch, Polish, Brazilian Portuguese, Japanese, and Simplified Chinese, chosen from the visitor's browser language.
 - Custom Open Graph and social preview metadata, including automatic destination-page metadata fetching.
 
 </details>
@@ -112,6 +114,7 @@ Hoplane is designed for individuals, developers, organisations, and teams that w
 <summary><strong>Developer tools and operations</strong></summary>
 
 - REST API and integrated MCP server for supported AI assistants and other clients.
+- Signed webhooks (Standard Webhooks format) for link created, updated, deleted and clicked events, with optional retries through Cloudflare Queues.
 - JSON and CSV import/export, including common shortener export formats (such as Bitly-style, Shlink, YOURLS, and Sink data).
 - Optional nightly link backups to Cloudflare R2.
 - Light/dark dashboard and responsive layouts.
@@ -239,6 +242,17 @@ Add team members under **Settings → Team → Add team member**. Hoplane does n
 | **Editor** | Creates, edits, deletes, and imports links; inherits viewer capabilities. |
 | **Viewer** | Views links and analytics, exports data, and can create read-only API keys. |
 
+### Signing in with Cloudflare Access (optional)
+
+If your organisation uses [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/), people can sign in to the dashboard with your identity provider instead of a Hoplane password.
+
+1. In Cloudflare Zero Trust, add a **self-hosted application** for your Hoplane hostname that covers **only** the paths `/dashboard` and `/api/auth/access`. **Do not protect the whole domain**, or every short link will ask visitors to sign in.
+2. Copy the application's **Audience (AUD) tag**, and your team domain (`<team>.cloudflareaccess.com`).
+3. Set `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` in [`wrangler.jsonc`](wrangler.jsonc) and redeploy. The login page then shows **Continue with Cloudflare Access**.
+4. Add each person under **Settings → Team** with the email they use in Access, or set `ACCESS_AUTO_ROLE` to `viewer` or `editor` to create accounts automatically on first sign-in. Owners and admins are never created automatically.
+
+Hoplane verifies the Access token itself (signature, issuer, audience and expiry), so a forged header sent straight to the Worker, for example on `workers.dev`, is rejected. A Hoplane session started through Access ends no later than the Access token. Password sign-in, API keys and `SETUP_TOKEN` recovery keep working.
+
 ### API keys
 
 Go to **Settings → API & MCP**, create a key with the minimum necessary scopes, and optionally set its expiration. **Copy the key immediately:** it is displayed only once. Avoid using a privileged key in a public browser application or committed configuration file.
@@ -280,6 +294,13 @@ These project variables are documented in the `vars` section of [`wrangler.jsonc
 | `SLUG_LENGTH` | `6` | Auto-generated slug length, from 4 to 32 characters. |
 | `CASE_SENSITIVE` | `false` | Whether differently cased paths represent different links. Set before creating production links. |
 | `RETENTION_DAYS` | `365` | Retention period for click-level analytics; cumulative link click totals are retained separately. |
+| `NOT_FOUND_URL` | empty | Full `http(s)` URL that unknown short links redirect to (HTTP `302`, not cached). Empty shows the "Link not found" page. |
+| `UPDATE_CHECK` | `true` | Once a day, ask GitHub for the latest Hoplane release so owners and admins see an "update available" banner. The request carries only a generic `Hoplane/<version>` user agent. Set to `false` to turn it off. |
+| `HEALTH_CHECK_REQUESTS` | `30` | Outbound requests the daily link health check may make, when it is turned on in **Settings → Security**. Workers Free allows 50 subrequests per run; on a paid plan, raise it to check more links each day. |
+| `ACCESS_TEAM_DOMAIN` | empty | Cloudflare Access team domain (`<team>.cloudflareaccess.com`) for dashboard sign-in. See [Signing in with Cloudflare Access](#signing-in-with-cloudflare-access-optional). |
+| `ACCESS_AUD` | empty | Audience (AUD) tag of the Access application. Both Access values must be set. |
+| `ACCESS_AUTO_ROLE` | empty | `viewer` or `editor`: create an account with this role for Access users who don't have one. Empty: only people an admin has added can sign in. |
+| `EXPIRED_LINK_RETENTION_DAYS` | empty | Delete links this many days after they expire, during the daily maintenance run (up to 1,000 links per run). `0` deletes them at the first run after expiry. Links with a fallback URL are kept. Deleted links lose their analytics. Empty disables cleanup. |
 
 Edit `wrangler.jsonc` in your connected repository and commit the change, or change it locally and run `npm run deploy`.
 
@@ -304,6 +325,8 @@ Cloudflare treats Worker secrets differently from ordinary plaintext environment
 Owners and admins can use **Settings → Security** to configure:
 
 - **Warning page for every link**: visitors see a safety/interstitial page before redirection.
+- **Check destinations daily** (off by default): the maintenance run visits each enabled link's destinations (main URL, rule, A/B and fallback URLs), least recently checked first, and records whether they are reachable, broken (404/410), unreachable, or returning other errors. Problems appear under **Links → Needs attention** and on each link's page, which also has a **Check now** button. Checks use `GET`, as a visitor would, so leave this off if your links include one-time sign-in or unsubscribe URLs. Only public hostnames are requested, and every redirect hop is rechecked. With malware blocking on, link destinations are rechecked against it too.
+- **Block malware and phishing destinations** (off by default): new and edited links are checked with [Cloudflare's security DNS](https://developers.cloudflare.com/1.1.1.1/setup/#1111-for-families) (`1.1.1.2`) and refused if it blocks the destination. Only the destination hostnames are sent. Existing links are not rechecked. If the lookup fails or times out, the link is allowed, so treat this as a safety net, not a guarantee.
 - **Count bots and crawlers**: disabled by default in the supplied documentation.
 - **Blocked domains**: restrict destinations that may be created on the instance.
 
@@ -332,6 +355,8 @@ The project describes daily backups at **03:17 UTC** under `backups/links-YYYY-M
 > **R2 backups are not full disaster-recovery backups.** The documented export includes links, **not** user accounts, API keys, sessions, or analytics. Maintain an additional recovery strategy for your D1 data and configuration.
 
 ## Updating and maintaining your deployment
+
+Deployments never update themselves. With `UPDATE_CHECK` on (the default), owners and admins see a banner in the dashboard when a newer release is published, and **Settings → About → Updates** shows the latest version with a **Check now** button.
 
 **Back up and test upgrades first.** Database schema changes are described as being applied automatically after deployment; code rollback may not reverse database migrations.
 
@@ -480,6 +505,8 @@ npm test
 
 The dashboard uses a session cookie; other clients may use an API key in the `Authorization` header. Create keys under **Settings → API & MCP**.
 
+**OpenAPI:** every deployment serves an OpenAPI 3.1 description of this API at `/api/openapi.json` (no sign-in needed). Import it into Postman, Insomnia, Scalar or Swagger UI, or use it to generate a client. A test keeps it in step with the routes the Worker actually serves.
+
 ### Example: create a link
 
 ```bash
@@ -494,10 +521,12 @@ curl -X POST "https://go.example.com/api/links" \
 
 | Method | Endpoint | API key scope | Purpose |
 |---|---|---|---|
-| `GET` | `/api/links?q=&tag=&status=&sort=&page=&limit=` | `links:read` | List, search, and filter links. |
+| `GET` | `/api/links?q=&tag=&status=&health=&sort=&page=&limit=` | `links:read` | List, search, and filter links. `health=problems` lists links whose last destination check found an issue. |
 | `POST` | `/api/links` | `links:write` | Create a link. |
 | `GET` | `/api/links/:id` | `links:read` | Retrieve a link by ID. |
 | `GET` | `/api/links/lookup?slug=` | `links:read` | Find a link by slug. |
+| `GET` | `/api/links/count?q=&tag=` | `links:read` | Count links by status. |
+| `POST` | `/api/links/:id/health` | `links:write` | Check a link's destinations now and return the link with its `health`. |
 | `PATCH` | `/api/links/:id` | `links:write` | Update a link. |
 | `DELETE` | `/api/links/:id` | `links:write` | Delete a link and its analytics. |
 | `POST` | `/api/links/bulk` | `links:write` | Perform `delete`, `disable`, `enable`, or `tag` actions. |
@@ -512,6 +541,13 @@ curl -X POST "https://go.example.com/api/links" \
 | `GET` | `/api/analytics/live?since=` | `analytics:read` | Recent events. |
 | `GET` | `/api/analytics/export` | `analytics:read` | Click-level CSV. |
 | `POST` | `/api/mcp` | Per tool | MCP server using JSON-RPC over Streamable HTTP. |
+| `GET` | `/api/openapi.json` | None | OpenAPI 3.1 description of this API. |
+| `GET` | `/api/updates` | Admin session | Running and latest release versions. |
+| `GET` / `POST` | `/api/webhooks` | Admin session | List or add webhook endpoints. |
+| `PATCH` / `DELETE` | `/api/webhooks/:id` | Admin session | Change (`url`, `description`, `events`, `enabled`) or remove an endpoint. |
+| `POST` | `/api/webhooks/:id/rotate` | Admin session | Replace the signing secret and return it once. |
+| `POST` | `/api/webhooks/:id/test` | Admin session | Send a `webhook.test` event now. |
+| `POST` | `/api/updates/check` | Admin session | Check GitHub for a newer release now. |
 
 **Analytics query parameters:** `from`, `to` (ISO 8601 or milliseconds), `link` (ID or slug), and `tz` (UTC offset in minutes).
 
@@ -519,7 +555,14 @@ curl -X POST "https://go.example.com/api/links" \
 
 **Link fields:** `url`, `slug`, `title`, `description`, `image`, `notes`, `tags[]`, `redirect_code`, `forward_query`, `utm{source,medium,campaign,term,content}`, `rules[{field,op,values[],url}]`, `variants[{url,weight}]`, `password`, `warning`, `starts_at`, `expires_at`, `expired_url`, `max_clicks`, and `disabled`.
 
-For a future machine-readable specification and generated documentation, see the [Roadmap](ROADMAP.md).
+### Opening protected links from scripts
+
+Send the link's password in an `X-Link-Password` header instead of filling in the form. A wrong password returns `401` with a plain-text body, and header and form attempts share the same rate limit. If the link (or the whole instance) shows a warning page, the client receives that page instead of a redirect.
+
+```bash
+curl -fsSL -H "X-Link-Password: $LINK_PASSWORD" https://go.example.com/install | sh
+```
+
 
 ## MCP integration
 
@@ -544,7 +587,24 @@ An example client configuration from the original documentation:
 > [!CAUTION]
 > The credential above is a placeholder. Use your own generated API key, keep configuration files containing credentials private, and verify the exact settings supported by your MCP client.
 
-**Documented MCP tools:** `list_links`, `get_link`, `create_link`, `update_link`, `delete_link`, `list_tags`, and `get_analytics`. Available tools are filtered by the key's permissions.
+**Documented MCP tools:** `list_links` (including search), `get_link`, `count_links`, `create_link`, `update_link`, `upsert_link`, `delete_link`, `list_tags`, and `get_analytics`. Available tools are filtered by the key's permissions.
+
+## Webhooks
+
+Owners and admins can add HTTPS endpoints under **Settings → Webhooks** and choose which events each one receives:
+
+| Event | Sent when | `data` |
+|---|---|---|
+| `link.created` | A link is created in the dashboard, API or MCP. Imports do not send events. | `{ link }` |
+| `link.updated` | A link is edited, turned on or off, or tagged. | `{ link }` |
+| `link.deleted` | A link is deleted, including by expired-link cleanup. | `{ link: { id, slug } }` |
+| `link.clicked` | A visitor follows a link and the click is recorded in analytics (bots are excluded unless you count them). | `{ link: { id, slug }, click: { source, variant, country, region, city, continent, device, os, browser, language, referrer } }` |
+
+`link` is the same object the REST API returns. It never includes a password or password hash. Click events never include IP addresses, user agents, coordinates or visitor hashes.
+
+Each request is a JSON `POST` of `{ "type", "timestamp", "data" }`, signed with the [Standard Webhooks](https://www.standardwebhooks.com/) scheme: `webhook-id`, `webhook-timestamp` and `webhook-signature` headers, and a `whsec_` secret that is shown once when the endpoint is created or its secret is rotated. Verify requests with any Standard Webhooks library, and use `webhook-id` to discard duplicates. **Send test** posts a `webhook.test` event.
+
+**Delivery and retries:** without a queue, each delivery is attempted once, in the background, and failures are shown on the endpoint. Large bulk actions may also exceed the Workers subrequest limit for one request. For retries, create a queue (`npx wrangler queues create hoplane-webhooks`) and uncomment the `queues` block in [`wrangler.jsonc`](wrangler.jsonc). Failed deliveries are then retried with backoff (30 s, 2 min, 8 min, 32 min, about 2 h, then every 6 h) up to `max_retries`. Check Cloudflare Queues availability and pricing for your plan. Endpoints must use HTTPS on a public hostname and the default port, and redirects count as failed deliveries.
 
 ## Limits and operational notes
 
@@ -605,6 +665,8 @@ Before submitting a pull request:
 3. Run `npm run typecheck`, `npm run build`, and `npm test`.
 4. Preserve project attribution and comply with [LICENSE](LICENSE).
 5. Report vulnerabilities privately through [SECURITY.md](SECURITY.md), not in the PR.
+
+**Translations:** the visitor-facing pages are translated in [`src/worker/lib/i18n.ts`](src/worker/lib/i18n.ts). To add or correct a language, edit or copy a locale block, add new locales to `LOCALES`, and run `npm test`; the tests check that every string is present. Corrections from native speakers are especially welcome, since the initial translations have not all been reviewed by one.
 
 ### Project links
 

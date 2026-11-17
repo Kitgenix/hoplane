@@ -53,3 +53,24 @@ export function buildDestination(target: string, opts: { utm?: Utm; forwardFrom?
   }
   return url.toString();
 }
+
+/**
+ * Fetching a remote page is not equivalent to validating a redirect URL.
+ * This conservative check requires an ordinary public DNS hostname.
+ * It blocks IP literals, localhost/reserved names and nonstandard ports.
+ * It does NOT replace provider-level egress controls or DNS/IP checks after resolution.
+ */
+export function isPublicFetchTarget(value: string, selfHost?: string): boolean {
+  const normalised = safeUrl(value);
+  if (!normalised) return false;
+  const u = new URL(normalised);
+  const host = u.hostname.toLowerCase().replace(/\.$/, '');
+  const ownHost = selfHost?.toLowerCase().replace(/\.$/, '');
+  if (!host.includes('.') || (ownHost && host === ownHost)) return false;
+  if (u.port && u.port !== '80' && u.port !== '443') return false;
+  // URL normalises legacy IPv4 forms (127.1, decimal/hex IPs) to dotted IPs.
+  // Disallow all IP literals, including public ones, for server-side fetches.
+  if (/^\[.*\]$/.test(host) || /^\d+(?:\.\d+){3}$/.test(host)) return false;
+  if (/(?:^|\.)(?:localhost|local|internal|lan|test|invalid|example|onion|arpa)$/.test(host)) return false;
+  return true;
+}

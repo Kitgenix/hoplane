@@ -122,7 +122,11 @@ Hoplane includes multiple application-level security measures designed to protec
 
 -   Session tokens and API keys are stored as SHA-256 hashes rather than plaintext values.
 
+-   Webhook signing secrets are the exception: Hoplane needs the secret itself to sign each delivery, so it is stored in D1. The API reveals it only when an endpoint is created or its secret is rotated. Anyone with read access to the D1 database can read these secrets, so rotate them under **Settings → Webhooks** if the database may have been exposed.
+
 -   Authentication sessions can be revoked server-side.
+
+-   Optional Cloudflare Access sign-in verifies the Access JWT's RS256 signature against the team's published keys, plus its issuer, audience and expiry, so forged `Cf-Access-Jwt-Assertion` headers are rejected even when the Worker is reachable without Access. Accounts are only created automatically when `ACCESS_AUTO_ROLE` is set, and never with the admin or owner role.
 
 -   Session cookies use the `HttpOnly`, `Secure`, and `SameSite=Strict` attributes.
 

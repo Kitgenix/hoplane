@@ -41,6 +41,35 @@ This changelog follows the principles of [Keep a Changelog](https://keepachangel
 - Responsive dashboard with light and dark themes.
 - Tests that run in the Cloudflare Workers runtime, including attribution checks.
 
+### Added
+
+- **`NOT_FOUND_URL`:** redirect unknown short links to a URL of your choice instead of showing the "Link not found" page.
+- **`EXPIRED_LINK_RETENTION_DAYS`:** optionally delete links a set number of days after they expire, during the daily maintenance run. Links with a fallback URL are kept. Off by default.
+- **`X-Link-Password` header:** command-line and API clients can open password-protected links without the HTML form.
+- **MCP tools `count_links` and `upsert_link`**, and a matching `GET /api/links/count` endpoint.
+- **Settings → About** shows the unknown-link and expired-link-cleanup settings.
+- **Malware and phishing check (Settings → Security, off by default):** new and edited links are checked with Cloudflare's security DNS (`1.1.1.2`) and refused if it blocks the destination, including routing-rule, A/B and fallback URLs. Lookups that fail allow the link.
+- **Cloudflare Access sign-in:** with `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` set, the login page offers **Continue with Cloudflare Access**. Hoplane verifies the Access JWT (RS256 signature, issuer, audience and expiry) and maps the email to a Hoplane account. It can optionally create viewer or editor accounts (`ACCESS_AUTO_ROLE`). Sessions end no later than the Access token.
+- **OpenAPI 3.1 description** at `/api/openapi.json`. Link request schemas are generated from the validation schemas, and a test fails if a route is added without being documented.
+- **Webhooks (Settings → Webhooks):** signed `link.created`, `link.updated`, `link.deleted` and `link.clicked` events in the Standard Webhooks format, with one-time secrets, rotation and test sends. Add an optional Cloudflare Queue (`WEBHOOK_QUEUE`) for retries with backoff. Click events contain no IPs, user agents or coordinates. Adds migration `0003_webhooks.sql`.
+- **Link health checks (Settings → Security, off by default):** the daily maintenance run checks link destinations, including rule, A/B and fallback URLs, and flags broken, unreachable or erroring ones. Flagged links appear under **Links → Needs attention**, and each link page has a **Check now** button. With malware blocking on, existing links are rechecked against it. `HEALTH_CHECK_REQUESTS` caps outbound requests per run. Adds migration `0002_link_health.sql`.
+- **Translated visitor pages:** link error, password and warning pages are served in English, German, Spanish, French, Italian, Dutch, Polish, Brazilian Portuguese, Japanese or Simplified Chinese, based on the visitor's `Accept-Language` header. The attribution footer is unchanged.
+- **"Update available" banner:** the daily maintenance run asks GitHub for the latest release, and owners and admins see a banner when a newer one exists. **Settings → About → Updates** has a **Check now** button. Turn it off with `UPDATE_CHECK=false`.
+
+### Changed
+
+- **Faster redirects for links without a click limit.** The redirect no longer waits for a write to the D1 primary. Previously every counted redirect waited for a click-counter update, which costs a cross-region round trip for visitors far from the database. The counter and the click record are now written together in the background, so a link's click total appears a moment after the redirect. Links with a click limit still reserve each click atomically before redirecting, so the limit stays exact.
+
+### Fixed
+
+- **Bulk actions failed for more than about 50 links.** `POST /api/links/bulk` accepts up to 500 ids, but delete and enable/disable put every id into one query, past D1's limit of 100 bound parameters, so the request failed with an error. Bulk actions now run in chunks.
+
+- **Sink imports kept only the basic fields.** Importing a [Sink](https://github.com/miantiao-me/sink) JSON export now keeps:
+  - country routing (`geo`) and App Store / Play Store targets (`apple`, `google`), converted to routing rules with device targets first, as Sink does;
+  - `unsafe` (as the warning page) and `redirectWithQuery`. Sink links no longer start forwarding query strings, because Sink's default is off.
+- **Imported Sink passwords locked visitors out.** Password hashes in Sink exports (`sink-pwd:v1:…`) were stored as if they were plaintext passwords, so no real password could open the link. They are now converted to Hoplane's PBKDF2 format and the original passwords keep working. Masked passwords are rejected with a request for a new password.
+- **One bad field failed the whole import row.** Rows with a relative preview image (such as Sink's `/_assets/…` uploads) or over-long title, description or notes now import with that field dropped or shortened, and the import result reports each change. Sink cloaking and reverse-proxy settings are reported as unsupported.
+
 ### Release verification
 
 Before moving these items into a dated release, maintainers should verify:

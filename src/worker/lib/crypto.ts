@@ -42,6 +42,8 @@ export function timingSafeEqual(a: string, b: string): boolean {
  * testing a stronger, versioned KDF and migration on the Workers runtime.
  */
 const ITERATIONS = 100_000;
+/** Highest iteration count verifyPassword accepts; imported hashes must not exceed it. */
+export const PASSWORD_ITERATIONS = ITERATIONS;
 const HASH_FORMAT = /^pbkdf2\$([1-9][0-9]*)\$([a-fA-F0-9]{32})\$([a-fA-F0-9]{64})$/;
 
 async function derive(password: string, salt: Uint8Array, iterations: number): Promise<string> {

@@ -30,6 +30,18 @@ export interface Utm {
   content?: string;
 }
 
+/** Outcome of the most recent destination check (see services/health.ts). */
+export type HealthStatus = 'ok' | 'warning' | 'unreachable' | 'broken' | 'flagged' | 'skipped';
+
+export interface LinkHealth {
+  status: HealthStatus;
+  http_status: number | null;
+  /** The destination that produced this status (the worst one, if a link has several). */
+  target: string | null;
+  error: string | null;
+  checked_at: number;
+}
+
 export interface Link {
   id: string;
   slug: string;
@@ -56,6 +68,8 @@ export interface Link {
   created_by: string | null;
   created_at: number;
   updated_at: number;
+  /** Null until the link has been checked. */
+  health: LinkHealth | null;
   short_url?: string;
 }
 
@@ -114,6 +128,37 @@ export interface LiveEvent {
   longitude: number | null;
 }
 
+export const WEBHOOK_EVENTS = ['link.created', 'link.updated', 'link.deleted', 'link.clicked'] as const;
+export type WebhookEventType = (typeof WEBHOOK_EVENTS)[number];
+
+/** A webhook endpoint as the API returns it. The signing secret is only revealed on create or rotate. */
+export interface WebhookEndpoint {
+  id: string;
+  url: string;
+  description: string;
+  events: WebhookEventType[];
+  enabled: boolean;
+  created_at: number;
+  /** The first characters of the secret, to tell secrets apart. */
+  secret_hint: string;
+  last_status: number | null;
+  last_error: string | null;
+  last_attempt_at: number | null;
+  /** Consecutive failed deliveries; 0 when the latest attempt succeeded. */
+  failures: number;
+}
+
+/** Result of the daily "is a newer Hoplane release available?" check (admin only). */
+export interface UpdateStatus {
+  /** False when UPDATE_CHECK is "false". */
+  enabled: boolean;
+  current: string;
+  latest: string | null;
+  url: string | null;
+  checked_at: number | null;
+  update_available: boolean;
+}
+
 export interface InstanceInfo {
   site_name: string;
   version: string;
@@ -122,6 +167,11 @@ export interface InstanceInfo {
   case_sensitive: boolean;
   slug_length: number;
   retention_days: number;
+  /** Days after expiry before a link is deleted; null when cleanup is off. */
+  expired_link_retention_days: number | null;
+  not_found_url: string | null;
+  /** Cloudflare Access sign-in is configured (ACCESS_TEAM_DOMAIN and ACCESS_AUD). */
+  access_login: boolean;
   cache: boolean;
   backups: boolean;
 }

@@ -54,10 +54,11 @@ export function requireJson(c: Context<AppEnv>) {
   }
 }
 
-export async function createSession(c: Context<AppEnv>, userId: string) {
+/** `notAfter` caps the session (epoch ms), e.g. at the expiry of a Cloudflare Access token. */
+export async function createSession(c: Context<AppEnv>, userId: string, notAfter?: number) {
   const token = randomToken(32);
   const now = Date.now();
-  const expires = now + SESSION_DAYS * 86_400_000;
+  const expires = Math.min(now + SESSION_DAYS * 86_400_000, notAfter ?? Infinity);
   await c.env.DB.prepare('INSERT INTO sessions (id, user_id, created_at, expires_at, user_agent) VALUES (?, ?, ?, ?, ?)')
     .bind(await sha256(token), userId, now, expires, (c.req.header('user-agent') || '').slice(0, 200))
     .run();
@@ -67,7 +68,7 @@ export async function createSession(c: Context<AppEnv>, userId: string) {
     httpOnly: true,
     secure,
     sameSite: 'Strict',
-    maxAge: SESSION_DAYS * 86_400,
+    maxAge: Math.max(1, Math.floor((expires - now) / 1000)),
   });
 }
 

@@ -1,4 +1,4 @@
-import { ArrowRight, KeyRound } from 'lucide-react';
+import { ArrowRight, KeyRound, ShieldCheck } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import type { InstanceInfo } from '../../shared/types';
 import { KITGENIX } from '../../shared/attribution';
@@ -41,10 +41,18 @@ function Shell({ instance, children }: { instance: InstanceInfo | null; children
   );
 }
 
+const ACCESS_ERRORS: Record<string, string> = {
+  not_configured: 'Cloudflare Access sign-in is not set up on this instance.',
+  no_token: 'Cloudflare Access did not send a sign-in token. Check that your Access application covers /api/auth/access.',
+  invalid_token: 'The Cloudflare Access token could not be verified. Check ACCESS_TEAM_DOMAIN and ACCESS_AUD.',
+  no_account: 'You signed in with Cloudflare Access, but there is no account for that email here. Ask an admin to add you.',
+};
+
 export function LoginPage({ instance, onDone }: { instance: InstanceInfo | null; onDone: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const accessError = new URLSearchParams(window.location.search).get('access_error');
+  const [error, setError] = useState<string | null>(accessError ? ACCESS_ERRORS[accessError] ?? 'Cloudflare Access sign-in failed.' : null);
   const [busy, setBusy] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -63,7 +71,15 @@ export function LoginPage({ instance, onDone }: { instance: InstanceInfo | null;
     <Shell instance={instance}>
       <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
       <p className="mt-1 text-sm text-muted">Sign in to manage your links.</p>
-      <form onSubmit={submit} className="mt-8 space-y-4">
+      {instance?.access_login && (
+        <>
+          <a href="/api/auth/access" className="mt-8 flex w-full items-center justify-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm font-medium hover:bg-surface-2">
+            <ShieldCheck className="size-4 text-brand-fg" /> Continue with Cloudflare Access
+          </a>
+          <p className="mt-6 flex items-center gap-3 text-xs text-muted before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">or use your password</p>
+        </>
+      )}
+      <form onSubmit={submit} className={instance?.access_login ? 'mt-4 space-y-4' : 'mt-8 space-y-4'}>
         <Field label="Email" htmlFor="email">
           <Input id="email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
         </Field>

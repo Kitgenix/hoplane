@@ -3,6 +3,7 @@
  * (required by the licence; see src/shared/attribution.ts).
  */
 import { ATTRIBUTION_LINK_HEADER, KITGENIX, attributionHtml } from '../../shared/attribution';
+import { messages, type Locale } from './i18n';
 
 export function esc(value: unknown): string {
   return String(value ?? '')
@@ -56,9 +57,10 @@ input:focus{outline:2px solid var(--brand);outline-offset:1px}
 /** The logo is public/favicon.svg (served as a static asset): replace that file to rebrand everywhere. */
 const MARK = '<img src="/favicon.svg" alt="" width="44" height="44">';
 
-export function page(opts: { title: string; siteName: string; body: string; head?: string; status?: number; noindex?: boolean }): Response {
+export function page(opts: { title: string; siteName: string; body: string; head?: string; status?: number; noindex?: boolean; lang?: Locale }): Response {
+  const lang = opts.lang ?? 'en';
   const html = `<!doctype html>
-<html lang="en"><head>
+<html lang="${lang}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(opts.title)} · ${esc(opts.siteName)}</title>
 <meta name="generator" content="${KITGENIX.brand}"><link rel="author" href="${KITGENIX.website}">
@@ -73,6 +75,9 @@ ${attributionHtml()}
     status: opts.status ?? 200,
     headers: baseHeaders({
       'Content-Type': 'text/html; charset=utf-8',
+      'Content-Language': lang,
+      // Visitor pages are translated from the Accept-Language header.
+      Vary: 'Accept-Language',
       'Cache-Control': 'no-store',
       'Content-Security-Policy': PAGE_CSP,
       'X-Frame-Options': 'DENY',
@@ -80,50 +85,57 @@ ${attributionHtml()}
   });
 }
 
-export function messagePage(siteName: string, status: number, title: string, message: string, action?: { href: string; label: string }) {
+export function messagePage(siteName: string, status: number, title: string, message: string, action?: { href: string; label: string }, lang: Locale = 'en') {
   return page({
     siteName,
     status,
     title,
+    lang,
     body: `<div class="card"><div class="mark">${MARK}</div><div class="eyebrow">${esc(siteName)}</div><h1>${esc(title)}</h1><p>${esc(message)}</p>${
       action ? `<a class="btn" href="${esc(action.href)}">${esc(action.label)}</a>` : ''
     }</div>`,
   });
 }
 
-export function passwordPage(siteName: string, slug: string, error?: string, status = 200) {
+export function passwordPage(siteName: string, slug: string, error?: string, status = 200, lang: Locale = 'en') {
+  const m = messages(lang).password;
   return page({
     siteName,
     status,
-    title: 'Protected link',
+    lang,
+    title: m.title,
     body: `<form class="card" method="post" action="/${esc(slug)}">
-<div class="mark">${MARK}</div><div class="eyebrow">Protected link</div>
-<h1>This link needs a password</h1><p>Enter the password you were given to continue.</p>
-<label for="pw">Password</label><input id="pw" name="password" type="password" autocomplete="off" required autofocus>
+<div class="mark">${MARK}</div><div class="eyebrow">${esc(m.title)}</div>
+<h1>${esc(m.heading)}</h1><p>${esc(m.message)}</p>
+<label for="pw">${esc(m.label)}</label><input id="pw" name="password" type="password" autocomplete="off" required autofocus>
 ${error ? `<div class="err" role="alert">${esc(error)}</div>` : ''}
-<button class="btn" type="submit">Continue</button></form>`,
+<button class="btn" type="submit">${esc(m.submit)}</button></form>`,
   });
 }
 
-export function warningPage(siteName: string, destination: string) {
+export function warningPage(siteName: string, destination: string, lang: Locale = 'en') {
+  const m = messages(lang).warning;
   let host = destination;
   try {
     host = new URL(destination).hostname;
   } catch {}
+  // Escape the template first, then insert the escaped host, so a translation cannot inject markup.
+  const heading = esc(m.heading).replace('{host}', `<span dir="ltr">${esc(host)}</span>`);
   return page({
     siteName,
-    title: 'You are leaving',
-    body: `<div class="card"><div class="mark">${MARK}</div><div class="eyebrow">Check before you continue</div>
-<h1>You are about to visit ${esc(host)}</h1>
-<div class="notice">This link goes to an external website. Only continue if you trust where it is going.</div>
+    lang,
+    title: m.title,
+    body: `<div class="card"><div class="mark">${MARK}</div><div class="eyebrow">${esc(m.eyebrow)}</div>
+<h1>${heading}</h1>
+<div class="notice">${esc(m.notice)}</div>
 <code class="dest">${esc(destination)}</code>
-<a class="btn" href="${esc(destination)}" rel="noopener noreferrer nofollow">Continue to site</a>
-<a class="btn ghost" href="/">Cancel</a></div>`,
+<a class="btn" href="${esc(destination)}" rel="noopener noreferrer nofollow">${esc(m.continue)}</a>
+<a class="btn ghost" href="/">${esc(m.cancel)}</a></div>`,
   });
 }
 
 /** Served to link-preview crawlers so chat/social apps render a custom card. */
-export function previewPage(siteName: string, opts: { title: string; description: string; image: string; url: string; canonical: string }) {
+export function previewPage(siteName: string, opts: { title: string; description: string; image: string; url: string; canonical: string }, lang: Locale = 'en') {
   const t = esc(opts.title || siteName);
   const d = esc(opts.description);
   const img = esc(opts.image);
@@ -137,7 +149,8 @@ ${img ? `<meta property="og:image" content="${img}"><meta name="twitter:image" c
     title: opts.title || siteName,
     head,
     noindex: true,
-    body: `<div class="card"><h1>${t}</h1>${d ? `<p>${d}</p>` : ''}<a class="btn" href="${esc(opts.url)}">Open link</a></div>`,
+    lang,
+    body: `<div class="card"><h1>${t}</h1>${d ? `<p>${d}</p>` : ''}<a class="btn" href="${esc(opts.url)}">${esc(messages(lang).openLink)}</a></div>`,
   });
   return res;
 }

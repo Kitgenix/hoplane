@@ -1,7 +1,7 @@
-import { KeyRound, Plus, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
+import { KeyRound, Plus, RotateCw, Send, ShieldCheck, Trash2, UserPlus, Webhook } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
-import type { ApiKey, Role, Scope, User } from '../../shared/types';
-import { ROLES, SCOPES } from '../../shared/types';
+import type { ApiKey, Role, Scope, UpdateStatus, User, WebhookEndpoint, WebhookEventType } from '../../shared/types';
+import { ROLES, SCOPES, WEBHOOK_EVENTS } from '../../shared/types';
 import { KITGENIX } from '../../shared/attribution';
 import { GithubMark } from '../components/Attribution';
 import { PageHeader } from '../components/Layout';
@@ -10,7 +10,7 @@ import { api, ApiError } from '../lib/api';
 import { ago, dateTime } from '../lib/format';
 import { useAsync, useSession } from '../lib/hooks';
 
-type Tab = 'account' | 'team' | 'keys' | 'security' | 'audit' | 'about';
+type Tab = 'account' | 'team' | 'keys' | 'webhooks' | 'security' | 'audit' | 'about';
 
 const ROLE_HELP: Record<Role, string> = {
   owner: 'Everything, including managing admins',
@@ -275,7 +275,7 @@ function KeysTab() {
 
 function SecurityTab() {
   const toast = useToast();
-  const { data, setData } = useAsync((signal) => api<{ blocked_domains: string[]; warn_all: boolean; track_bots: boolean }>('/settings', { signal }), []);
+  const { data, setData } = useAsync((signal) => api<{ blocked_domains: string[]; warn_all: boolean; track_bots: boolean; safe_browsing: boolean; health_checks: boolean }>('/settings', { signal }), []);
   const [domains, setDomains] = useState('');
   useEffect(() => { if (data) setDomains(data.blocked_domains.join('\n')); }, [data]);
   if (!data) return <Skeleton className="h-40" />;
@@ -292,6 +292,18 @@ function SecurityTab() {
       <Card title="Redirect safety">
         <div className="space-y-5">
           <Switch checked={data.warn_all} onChange={(v) => save({ warn_all: v })} label="Warning page for every link" description="Visitors see the destination and must click to continue. Useful for public or community shorteners." />
+          <Switch
+            checked={data.safe_browsing}
+            onChange={(v) => save({ safe_browsing: v })}
+            label="Block malware and phishing destinations"
+            description="New and edited links are checked with Cloudflare's security DNS (1.1.1.2) and refused if it blocks the destination. Existing links are not rechecked. If the check can't be completed, the link is allowed."
+          />
+          <Switch
+            checked={data.health_checks}
+            onChange={(v) => save({ health_checks: v })}
+            label="Check destinations daily"
+            description="Each day, Hoplane visits link destinations and flags broken or unreachable ones under Links → Needs attention. Checks use GET like a visitor, so leave this off if your links include one-time or unsubscribe URLs."
+          />
           <Switch checked={data.track_bots} onChange={(v) => save({ track_bots: v })} label="Count bots and crawlers" description="Off by default so analytics reflect real people." />
         </div>
       </Card>
@@ -299,6 +311,161 @@ function SecurityTab() {
         <Textarea rows={7} value={domains} onChange={(e) => setDomains(e.target.value)} placeholder={'example-phishing.com\nbad.example'} className="font-mono text-[13px]" />
         <Button className="mt-3" variant="primary" onClick={() => save({ blocked_domains: domains.split(/[\s,]+/).map((d) => d.trim().toLowerCase()).filter(Boolean) })}>Save blocklist</Button>
       </Card>
+    </div>
+  );
+}
+
+const EVENT_HELP: Record<WebhookEventType, string> = {
+  'link.created': 'A link is created in the dashboard, API or MCP (not by imports)',
+  'link.updated': 'A link is edited, turned on or off, or tagged',
+  'link.deleted': 'A link is deleted, including by expired-link cleanup',
+  'link.clicked': 'Someone follows a link (bots excluded unless counted). No IPs or user agents are sent',
+};
+
+function WebhooksTab() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const { data, reload } = useAsync((signal) => api<{ items: WebhookEndpoint[]; queue: boolean }>('/webhooks', { signal }), []);
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState('');
+  const [description, setDescription] = useState('');
+  const [events, setEvents] = useState<WebhookEventType[]>(['link.created', 'link.updated', 'link.deleted']);
+  const [secret, setSecret] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const fail = (e: unknown) => toast(e instanceof ApiError ? e.message : 'Failed', 'bad');
+  const create = async () => {
+    try {
+      const r = await api<{ secret: string }>('/webhooks', { body: { url, description, events } });
+      setSecret(r.secret);
+      setUrl('');
+      setDescription('');
+      reload();
+    } catch (e) {
+      fail(e);
+    }
+  };
+  const patch = async (id: string, body: Record<string, unknown>) => {
+    try {
+      await api(`/webhooks/${id}`, { method: 'PATCH', body });
+      reload();
+    } catch (e) {
+      fail(e);
+    }
+  };
+  const test = async (w: WebhookEndpoint) => {
+    setBusy(w.id);
+    try {
+      const r = await api<{ ok: boolean; status: number | null; error: string | null }>(`/webhooks/${w.id}/test`, { method: 'POST' });
+      toast(r.ok ? `Test delivered (HTTP ${r.status})` : r.error ?? 'Delivery failed', r.ok ? 'good' : 'bad');
+      reload();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const rotate = async (w: WebhookEndpoint) => {
+    if (!(await confirm({ title: 'Rotate signing secret?', message: 'Deliveries are signed with the new secret straight away. Update your receiver before the next event, or it will reject them.', confirm: 'Rotate' }))) return;
+    try {
+      const r = await api<{ secret: string }>(`/webhooks/${w.id}/rotate`, { method: 'POST' });
+      setSecret(r.secret);
+      setOpen(true);
+      reload();
+    } catch (e) {
+      fail(e);
+    }
+  };
+  const remove = async (w: WebhookEndpoint) => {
+    if (!(await confirm({ title: 'Delete this webhook?', message: `${w.url} will stop receiving events.`, confirm: 'Delete', danger: true }))) return;
+    await api(`/webhooks/${w.id}`, { method: 'DELETE' }).catch(fail);
+    reload();
+  };
+
+  return (
+    <div className="space-y-5">
+      <Card
+        title="Webhooks"
+        description="Send signed events to your own systems when links change or are clicked."
+        padded={false}
+        actions={<Button size="sm" variant="primary" icon={<Plus className="size-4" />} onClick={() => { setSecret(null); setOpen(true); }}>Add endpoint</Button>}
+      >
+        {!data ? <div className="p-5"><Skeleton className="h-16" /></div> : !data.items.length ? (
+          <Empty icon={<Webhook className="size-5" />} title="No webhooks yet">Add an HTTPS endpoint to receive link events, for example from Zapier, Make, n8n or your own server.</Empty>
+        ) : (
+          <ul className="divide-y divide-line">
+            {data.items.map((w) => (
+              <li key={w.id} className="space-y-2 px-5 py-4">
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-mono text-[13px]">{w.url}</p>
+                    <p className="text-xs text-muted">
+                      {w.description ? `${w.description} · ` : ''}secret <code className="font-mono">{w.secret_hint}</code> · added {ago(w.created_at)}
+                    </p>
+                  </div>
+                  <Switch checked={w.enabled} onChange={(v) => patch(w.id, { enabled: v })} label={<span className="sr-only">Enabled</span>} />
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {w.events.map((e) => <Badge key={e}>{e}</Badge>)}
+                  {w.last_attempt_at && (w.failures > 0 ? (
+                    <Badge tone="bad">{w.failures} failed · {w.last_error ?? `HTTP ${w.last_status}`}</Badge>
+                  ) : (
+                    <Badge tone="good">Delivering · {ago(w.last_attempt_at)}</Badge>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" icon={<Send className="size-4" />} loading={busy === w.id} onClick={() => test(w)}>Send test</Button>
+                  <Button size="sm" icon={<RotateCw className="size-4" />} onClick={() => rotate(w)}>Rotate secret</Button>
+                  <Button size="sm" variant="ghost" icon={<Trash2 className="size-4" />} onClick={() => remove(w)}>Delete</Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card title="Delivery and verification">
+        <p className="text-sm text-muted">
+          {data?.queue
+            ? 'A Cloudflare Queue is configured, so failed deliveries are retried with backoff for about a day.'
+            : 'No queue is configured, so each delivery is attempted once. Add the WEBHOOK_QUEUE binding in wrangler.jsonc to retry failed deliveries.'}{' '}
+          Requests follow the Standard Webhooks format: verify the <code className="font-mono">webhook-signature</code> header with any Standard Webhooks library and the endpoint's secret, and use <code className="font-mono">webhook-id</code> to ignore duplicates.
+        </p>
+        <pre className="mt-3 overflow-x-auto rounded-lg bg-surface-2 p-3 font-mono text-xs leading-relaxed">{`import { Webhook } from 'standardwebhooks';
+
+const wh = new Webhook(process.env.HOPLANE_WEBHOOK_SECRET); // whsec_…
+const event = wh.verify(rawBody, headers); // throws if the signature is wrong
+// event.type: 'link.created' | 'link.updated' | 'link.deleted' | 'link.clicked'`}</pre>
+      </Card>
+
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={secret ? 'Copy the signing secret' : 'Add webhook endpoint'}
+        footer={secret ? <Button variant="primary" onClick={() => setOpen(false)}>Done</Button> : <><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" disabled={!url || !events.length} onClick={create}>Add endpoint</Button></>}
+      >
+        {secret ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted">This is the only time the secret is shown. Store it with your receiver to verify signatures.</p>
+            <div className="flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 font-mono text-[13px]"><span className="flex-1 break-all">{secret}</span><CopyButton text={secret} /></div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <Field label="Endpoint URL" hint="HTTPS on a public hostname and the default port."><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://hooks.example.com/hoplane" autoFocus /></Field>
+            <Field label="Description (optional)"><Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="CRM sync" /></Field>
+            <Field label="Events">
+              <div className="space-y-2">
+                {WEBHOOK_EVENTS.map((e) => (
+                  <label key={e} className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" className="mt-0.5 size-4 accent-[var(--brand)]" checked={events.includes(e)} onChange={(ev) => setEvents(ev.target.checked ? [...events, e] : events.filter((x) => x !== e))} />
+                    <span><code className="font-mono">{e}</code><span className="block text-xs text-muted">{EVENT_HELP[e]}</span></span>
+                  </label>
+                ))}
+              </div>
+            </Field>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
@@ -330,13 +497,61 @@ function AuditTab() {
   );
 }
 
+function UpdatesCard() {
+  const toast = useToast();
+  const { data, setData } = useAsync((signal) => api<UpdateStatus>('/updates', { signal }), []);
+  const [checking, setChecking] = useState(false);
+  if (!data) return <Skeleton className="h-32" />;
+  const check = async () => {
+    setChecking(true);
+    try {
+      const next = await api<UpdateStatus>('/updates/check', { method: 'POST' });
+      setData(next);
+      toast(next.update_available ? `${KITGENIX.product} ${next.latest} is available` : 'You are on the latest release', 'good');
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Could not check for updates', 'bad');
+    } finally {
+      setChecking(false);
+    }
+  };
+  return (
+    <Card title="Updates" description="Deployments never update themselves. Hoplane checks GitHub once a day and tells admins when a newer release exists.">
+      <dl className="divide-y divide-line text-sm">
+        <div className="flex justify-between gap-4 py-2"><dt className="text-muted">Running</dt><dd className="font-medium">{data.current}</dd></div>
+        <div className="flex justify-between gap-4 py-2">
+          <dt className="text-muted">Latest release</dt>
+          <dd className="font-medium">
+            {data.latest ?? (data.checked_at ? 'None published yet' : 'Not checked yet')}
+            {data.update_available && <Badge tone="brand" className="ml-2">Update available</Badge>}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-4 py-2"><dt className="text-muted">Last checked</dt><dd className="font-medium">{data.checked_at ? ago(data.checked_at) : 'Never'}</dd></div>
+      </dl>
+      {data.enabled ? (
+        <Button className="mt-3" loading={checking} onClick={check}>Check now</Button>
+      ) : (
+        <p className="mt-3 text-xs text-muted">Update checks are off. Set <code className="font-mono">UPDATE_CHECK</code> to <code className="font-mono">"true"</code> in <code className="font-mono">wrangler.jsonc</code> to turn them on.</p>
+      )}
+    </Card>
+  );
+}
+
 function AboutTab() {
-  const { instance } = useSession();
+  const { instance, isAdmin } = useSession();
   const rows: [string, string][] = [
     ['Version', instance.version],
     ['Slug length', `${instance.slug_length} characters`],
     ['Case-sensitive slugs', instance.case_sensitive ? 'Yes' : 'No'],
     ['Analytics retention', `${instance.retention_days} days`],
+    [
+      'Expired link cleanup',
+      instance.expired_link_retention_days === null
+        ? 'Off'
+        : instance.expired_link_retention_days === 0
+          ? 'At the first daily run after expiry'
+          : `${instance.expired_link_retention_days} days after expiry`,
+    ],
+    ['Unknown links', instance.not_found_url ? `Redirect to ${instance.not_found_url}` : 'Show “Link not found”'],
     ['Edge cache (KV)', instance.cache ? 'Enabled' : 'Not configured'],
     ['Nightly backups (R2)', instance.backups ? 'Enabled' : 'Not configured'],
   ];
@@ -344,10 +559,11 @@ function AboutTab() {
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <Card title="This instance">
         <dl className="divide-y divide-line text-sm">
-          {rows.map(([k, v]) => <div key={k} className="flex justify-between py-2"><dt className="text-muted">{k}</dt><dd className="font-medium">{v}</dd></div>)}
+          {rows.map(([k, v]) => <div key={k} className="flex justify-between gap-4 py-2"><dt className="shrink-0 text-muted">{k}</dt><dd className="min-w-0 text-right font-medium break-all">{v}</dd></div>)}
         </dl>
         <p className="mt-3 text-xs text-muted">Change these with the <code className="font-mono">vars</code> in <code className="font-mono">wrangler.jsonc</code> and redeploy.</p>
       </Card>
+      {isAdmin && <UpdatesCard />}
       <Card title={<span className="flex items-center gap-2"><ShieldCheck className="size-4 text-brand-fg" /> Made by Kitgenix</span>}>
         <p className="text-sm text-muted">
           {KITGENIX.product} is free, self-hosted URL-shortening software by Kitgenix. Fork it, deploy it to your own Cloudflare account and make it yours. The licence asks for one thing in return: keep the visible credit links to Kitgenix.com and the Kitgenix GitHub.
@@ -368,7 +584,7 @@ export function SettingsPage() {
     { value: 'account', label: 'Account' },
     ...(isAdmin ? [{ value: 'team' as Tab, label: 'Team' }] : []),
     { value: 'keys', label: 'API & MCP' },
-    ...(isAdmin ? [{ value: 'security' as Tab, label: 'Security' }, { value: 'audit' as Tab, label: 'Audit log' }] : []),
+    ...(isAdmin ? [{ value: 'webhooks' as Tab, label: 'Webhooks' }, { value: 'security' as Tab, label: 'Security' }, { value: 'audit' as Tab, label: 'Audit log' }] : []),
     { value: 'about', label: 'About' },
   ];
   return (
@@ -378,6 +594,7 @@ export function SettingsPage() {
       {tab === 'account' && <AccountTab />}
       {tab === 'team' && <TeamTab />}
       {tab === 'keys' && <KeysTab />}
+      {tab === 'webhooks' && <WebhooksTab />}
       {tab === 'security' && <SecurityTab />}
       {tab === 'audit' && <AuditTab />}
       {tab === 'about' && <AboutTab />}

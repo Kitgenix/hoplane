@@ -28,9 +28,10 @@ export interface ClickExtra {
 }
 
 /**
- * Write a click event. If a redirect already reserved its click atomically,
- * do not increment the counter a second time.
- * Existing callers may omit options to retain the original behaviour.
+ * Write a click event. Without options, the click row and the link counter are
+ * written in one batch (used for uncapped links, off the redirect's critical path).
+ * If a capped link's redirect already reserved its click atomically, pass
+ * counterReserved so the counter is not incremented a second time.
  */
 export async function recordClick(
   db: D1Database,

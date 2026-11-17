@@ -11,13 +11,17 @@ import { runMaintenance } from './cron';
 import { VERSION, config, type AppEnv, type Bindings } from './env';
 import { HttpError } from './lib/errors';
 import { baseHeaders, landingPage, messagePage } from './lib/html';
+import { messages, negotiateLocale } from './lib/i18n';
 import { ensureSchema } from './migrate';
+import { openApiDocument } from './openapi';
 import { handleRedirect } from './redirect';
 import adminRoutes from './routes/admin';
 import analyticsRoutes from './routes/analytics';
 import authRoutes from './routes/auth';
 import linkRoutes from './routes/links';
 import mcpRoutes from './routes/mcp';
+import webhookRoutes from './routes/webhooks';
+import { consumeWebhookBatch, type WebhookMessage } from './services/webhooks';
 
 const app = new Hono<AppEnv>();
 
@@ -59,6 +63,9 @@ api.use('*', async (c, next) => {
   c.header('X-Content-Type-Options', 'nosniff');
 });
 
+// The API description is public: it documents the open-source API, not this instance's data.
+api.get('/openapi.json', (c) => c.json(openApiDocument(new URL(c.req.url).origin)));
+
 // Public authentication routes implement their own access checks where needed.
 api.route('/', authRoutes);
 
@@ -68,6 +75,7 @@ api.route('/', linkRoutes);
 api.route('/', analyticsRoutes);
 api.route('/', adminRoutes);
 api.route('/', mcpRoutes);
+api.route('/', webhookRoutes);
 
 api.all('*', () => {
   throw new HttpError(404, 'API endpoint not found');
@@ -126,16 +134,17 @@ app.on(['GET', 'HEAD', 'POST'], '/:slug{.+}', async (c) => {
   return handleRedirect(c.req.raw, c.env, c.executionCtx, c.req.param('slug'));
 });
 
-app.notFound((c) =>
-  messagePage(config(c.env).siteName, 404, 'Page not found', 'We could not find that page.', {
-    href: '/',
-    label: 'Go to homepage',
-  }),
-);
+app.notFound((c) => {
+  const lang = negotiateLocale(c.req.header('accept-language'));
+  const t = messages(lang);
+  return messagePage(config(c.env).siteName, 404, t.pageNotFound.title, t.pageNotFound.message, { href: '/', label: t.goHome }, lang);
+});
 
 app.onError((err, c) => {
   console.error('Unhandled error', err);
-  return messagePage(config(c.env).siteName, 500, 'Something went wrong', 'Please try again in a moment.');
+  const lang = negotiateLocale(c.req.header('accept-language'));
+  const t = messages(lang);
+  return messagePage(config(c.env).siteName, 500, t.error.title, t.error.message, undefined, lang);
 });
 
 export default {
@@ -145,6 +154,11 @@ export default {
     // Review runMaintenance() and ensureSchema() before changing migration
     // behaviour for scheduled events.
     ctx.waitUntil(runMaintenance(env).then((result) => console.log('maintenance', JSON.stringify(result))));
+  },
+  /** WEBHOOK_QUEUE consumer (only used when the queue is configured in wrangler.jsonc). */
+  async queue(batch, env) {
+    await ensureSchema(env.DB);
+    await consumeWebhookBatch(batch as MessageBatch<WebhookMessage>, env);
   },
 } satisfies ExportedHandler<Bindings>;
 
