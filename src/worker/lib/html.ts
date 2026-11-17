@@ -34,8 +34,8 @@ body{min-height:100vh;display:flex;flex-direction:column;background:var(--bg);co
 main{flex:1;display:grid;place-items:center;padding:32px 16px}
 .card{width:100%;max-width:440px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:32px;box-shadow:0 1px 2px rgba(7,27,58,.04),0 12px 40px -12px rgba(33,75,255,.18)}
 .accent::before{content:"";display:block;height:5px;margin:-32px -32px 28px;border-radius:18px 18px 0 0;background:linear-gradient(135deg,#42b3ff 0%,#214bff 55%,#071b3a 100%)}
-.mark{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#42b3ff,#214bff);color:var(--brand-ink);display:grid;place-items:center;margin-bottom:20px}
-.mark svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round}
+.mark{width:44px;height:44px;margin-bottom:20px}
+.mark img{display:block;width:100%;height:100%}
 .eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
 h1{font-size:24px;line-height:1.25;margin:6px 0 10px;letter-spacing:-.01em}
 p{color:var(--muted);margin:0 0 20px}
@@ -53,7 +53,8 @@ input:focus{outline:2px solid var(--brand);outline-offset:1px}
 .kg-attribution a:hover{color:var(--brand-fg)}
 `;
 
-const MARK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7H7a5 5 0 0 0 0 10h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8"/></svg>';
+/** The logo is public/favicon.svg (served as a static asset): replace that file to rebrand everywhere. */
+const MARK = '<img src="/favicon.svg" alt="" width="44" height="44">';
 
 export function page(opts: { title: string; siteName: string; body: string; head?: string; status?: number; noindex?: boolean }): Response {
   const html = `<!doctype html>

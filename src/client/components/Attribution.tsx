@@ -31,11 +31,8 @@ export function Attribution({ className, compact }: { className?: string; compac
 export function Logo({ name, className, byline = true }: { name?: string; className?: string; byline?: boolean }) {
   return (
     <span className={cx('flex items-center gap-2.5 font-semibold tracking-tight', className)}>
-      <span className="grid size-8 place-items-center rounded-[10px] kg-gradient-primary text-white shadow-sm shadow-brand/30">
-        <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-          <path d="M9 7H7a5 5 0 0 0 0 10h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8" />
-        </svg>
-      </span>
+      {/* The logo is public/favicon.svg: replace that file to rebrand everywhere. */}
+      <img src="/favicon.svg" alt="" width={32} height={32} className="size-8 shrink-0" />
       <span className="flex min-w-0 flex-col leading-tight">
         <span className="truncate">{name ?? KITGENIX.product}</span>
         {byline && <span className="text-[11px] font-medium text-muted">by Kitgenix</span>}
