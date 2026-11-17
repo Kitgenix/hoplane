@@ -26,3 +26,6 @@ Thumbs.db
 
 # Personal Claude Code settings
 .claude/settings.local.json
+
+# Private deployment notes (not part of the public project)
+tdsl-link.md
